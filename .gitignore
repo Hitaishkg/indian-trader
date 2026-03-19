@@ -1,0 +1,28 @@
+# Secrets
+.env
+.env.*
+!.env.example
+.mcp.json
+
+# Python
+.venv/
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+
+# Tools
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Project data
+data/*.db
+data/cache/
+data/raw/
+logs/
+*.log
+
+# OS
+.DS_Store
+Thumbs.db
