@@ -9,6 +9,7 @@ dependencies = [
     "yfinance>=0.2.40",
     "jugaad-data>=0.26",
     "numpy>=1.26.0",
+    "python-dotenv>=1.0.0",
 ]
 
 [dependency-groups]
