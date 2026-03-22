@@ -1,0 +1,19 @@
+[project]
+name = "indian-trader"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "pandas>=2.2.0",
+    "yfinance>=0.2.40",
+    "jugaad-data>=0.26",
+    "numpy>=1.26.0",
+]
+
+[dependency-groups]
+dev = [
+    "ruff>=0.15.7",
+    "pytest>=8.0.0",
+    "mypy>=1.0.0",
+]
