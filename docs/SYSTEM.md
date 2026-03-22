@@ -23,7 +23,7 @@ Zero delivery brokerage. CNC orders with GTT stop-losses.
 |--------|---------|-------|--------|
 | src/data/validator.py | Data quality gate — validates OHLCV and fundamentals | 1 | ✅ Built |
 | src/config/settings.py | Env loading and validation at startup | 1 | ✅ Built |
-| src/data/fetcher.py | yfinance + jugaad-data OHLCV with CSV caching | 1 | ⏳ Pending |
+| src/data/fetcher.py | yfinance + jugaad-data OHLCV with CSV caching | 1 | ✅ Built |
 | src/data/cleaner.py | Missing value handling, anomaly flagging | 1 | ⏳ Pending |
 | src/data/fundamentals.py | Screener.in scraper with fallback + cache | 1 | ⏳ Pending |
 | src/utils/logger.py | Structured logging to SQLite agent_logs | 1 | ⏳ Pending |

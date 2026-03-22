@@ -7,6 +7,12 @@
 
 ---
 
+## [2026-03-22] — Data Fetcher (src/data/fetcher.py)
+**Built**: OHLCV data acquisition layer with yfinance primary source, jugaad-data fallback, and CSV cache in data/cache/. Returns DataFrames matching the validator.py Section 5.1 contract exactly.
+**Connects to**: Reads from yfinance API and jugaad-data NSE API. Writes CSV cache files to data/cache/ (gitignored). Imports settings singleton for log_level. Output consumed by cleaner.py (Phase 1 step 4).
+**Next step**: src/data/cleaner.py — missing value handling and anomaly flagging (Phase 1, step 4 of 9)
+**Notes**: Architect confirmed jugaad-data now returns DATE/OPEN/HIGH/LOW/CLOSE/VOLUME/SYMBOL columns (not the older CH_* names). No jugaad fallback for sector indices — index API unreliable. HDFCBANK symbol corrected (spec initially had "HDFC BANK" with a space). 31/31 tests passing. Code Reviewer flagged one test fragility (hardcoded relative path in bare-except test) — fixed before commit.
+
 ## [2026-03-22] — Config Settings (src/config/settings.py)
 **Built**: Environment loading and validation module — frozen Settings dataclass singleton with all 16 config variables, three-tier variable categorisation (always-required / optional-with-default / phase-gated), and startup-time ConfigurationError reporting all problems at once.
 **Connects to**: Reads from .env via python-dotenv. Writes nothing. All other Phase 1+ modules will import the `settings` singleton from here.

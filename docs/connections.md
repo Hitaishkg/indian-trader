@@ -36,6 +36,34 @@
 - Safety interlock: `LIVE_TRADING=true` + `PAPER_TRADING=true` simultaneously → `ConfigurationError`
 - Secret masking: 11 fields masked with `***` in repr; phase-gated None fields shown as `None`
 
+## src/data/fetcher.py
+
+**Purpose:** OHLCV data acquisition layer — fetches historical price data for NSE stocks and sector indices from yfinance (primary) with jugaad-data fallback, caches results to CSV in data/cache/.
+
+**Public API:**
+- `fetch_ohlcv(symbols: list[str], start_date: datetime.date, end_date: datetime.date, cache_expiry_hours: int = 24) -> pd.DataFrame` — fetches OHLCV for one or more NSE symbols; returns normalised DataFrame matching validator.py Section 5.1 contract
+- `fetch_nifty50_symbols() -> list[str]` — returns hardcoded list of 50 current Nifty 50 constituents (updated 2026-03-22; update manually each quarter)
+- `fetch_sector_indices(start_date: datetime.date, end_date: datetime.date, cache_expiry_hours: int = 24) -> pd.DataFrame` — fetches NIFTY_50, NIFTY_BANK, NIFTY_IT, NIFTY_AUTO, NIFTY_PHARMA, NIFTY_FMCG via yfinance only
+- `class FetchError(Exception)` — raised when both yfinance and jugaad-data fail; carries `.symbol`, `.yfinance_error`, `.jugaad_error` attributes
+
+**Reads from:** yfinance API (primary), jugaad-data NSE API (fallback), data/cache/ CSV files
+
+**Writes to:** data/cache/{SYMBOL}_{source}.csv (CSV cache files, gitignored)
+
+**Called by:** src/data/cleaner.py (Phase 1), Data Collector Agent at 22:00 IST (Phase 4), src/backtest/runner.py (Phase 2)
+
+**Calls:** yfinance (yf.Ticker.history), jugaad_data.nse.stock_df, src.config.settings (log_level)
+
+**Key constants / thresholds relevant to debugging:**
+- `CACHE_DIR` — absolute path to data/cache/ derived from __file__
+- `NIFTY50_SYMBOLS` — 50-element list; update manually each quarter when NSE rebalances
+- `SECTOR_INDEX_MAP` — maps human-readable names to yfinance tickers (e.g. "NIFTY_IT" → "^CNXIT")
+- yfinance symbols use ".NS" suffix internally; output DataFrame strips it (stores "RELIANCE" not "RELIANCE.NS")
+- yfinance end date is exclusive — fetcher adds +1 day automatically
+- jugaad-data fallback not available for sector indices (yfinance only for indices)
+- Cache expiry default: 24 hours. Set cache_expiry_hours=0 to force fresh fetch.
+- Corrupt cache files are deleted and treated as cache miss (not an error)
+
 ## src/data/validator.py
 
 **Purpose:** Data quality gate — validates OHLCV and fundamentals DataFrames for corruption, coverage gaps, and time-series holes before any strategy logic runs.
