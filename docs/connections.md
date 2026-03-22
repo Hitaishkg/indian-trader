@@ -88,6 +88,26 @@
 - eps_positive_4q: from yfinance fallback uses trailingEps > 0 (approximation — cannot detect single negative quarter within positive trailing year)
 - Screener.in scraping: 2–5 second random delay before each request; consolidated URL tried first, standalone fallback
 
+## src/utils/logger.py
+
+**Purpose:** Configures Python's logging framework to emit structured log records to both stderr (console) and the SQLite `agent_logs` table simultaneously.
+
+**Public API:**
+- `setup_logging(db_path: str | None = None) -> None` — configures root logger with StreamHandler + SQLiteHandler; idempotent
+- `get_logger(name: str) -> logging.Logger` — thin wrapper around `logging.getLogger(name)`
+- `log_agent_action(agent_name, action, level, symbol, result, data_quality_score) -> None` — direct structured write to agent_logs, bypassing LogRecord pipeline
+- `SQLiteHandler(db_path: str)` — thread-safe logging.Handler subclass; public method `write_row(...)` for direct inserts
+
+**Reads from:** `settings.database_url`, `settings.log_level` (via `src.config.settings`)
+
+**Writes to:** `agent_logs` table in the SQLite database
+
+**Called by:** `main.py` (calls `setup_logging()` at startup); all modules that use `logging.getLogger(__name__)` flow through it automatically after setup
+
+**Calls:** `src.config.settings` only
+
+**Key constants/thresholds:** `_VALID_LEVELS = frozenset({"DEBUG","INFO","WARNING","ERROR","CRITICAL"})`. WAL mode pragmas applied on first DB connection. SQLiteHandler is thread-safe via `threading.Lock`.
+
 ## src/data/fetcher.py
 
 **Purpose:** OHLCV data acquisition layer — fetches historical price data for NSE stocks and sector indices from yfinance (primary) with jugaad-data fallback, caches results to CSV in data/cache/.

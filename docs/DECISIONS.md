@@ -7,6 +7,13 @@
 
 ---
 
+## [2026-03-22] — src/utils/logger.py
+
+**Built**: SQLite-backed structured logging module; configures root logger with dual output (stderr + agent_logs table), thread-safe SQLiteHandler with public write_row() method.
+**Connects to**: Writes to agent_logs table; reads settings.database_url and settings.log_level; all existing src.data.* modules flow through it automatically after setup_logging() is called.
+**Next step**: src/utils/notifier.py — Telegram + Gmail dual-channel notifications (Phase 1, step 7 of 9)
+**Notes**: Schema conflict with validator.py's legacy agent_logs table documented in spec Section 5. Future task will migrate validator.py to use log_agent_action(). log_agent_action() calls handler.write_row() (public) — does not access private handler attributes.
+
 ## [2026-03-22] — Fundamentals Fetcher (src/data/fundamentals.py)
 **Built**: Screener.in scraper with 45-day JSON cache, 3-strike yfinance fallback, and P/E cross-validation between sources. Returns fundamentals DataFrame matching validator.py Section 5.2 contract plus quality metadata columns.
 **Connects to**: Reads from Screener.in and yfinance APIs. Writes JSON cache to data/cache/. Imports settings singleton for log_level. Output consumed by validator.py (roe + debt_to_equity) and quality_filter.py (Phase 2, all fields).
