@@ -8,6 +8,34 @@
 
 <!-- Docs Agent: insert new module sections below this line, alphabetically by path -->
 
+## src/config/settings.py
+
+**Purpose:** Single source of truth for all configuration — loads `.env` at import time, validates every required variable, and exposes a frozen `Settings` dataclass singleton used by every other module.
+
+**Public API:**
+- `class ConfigurationError(Exception)` — raised at startup if any required variable is missing or invalid; carries `errors: list[str]` with all problems found
+- `class Settings` — frozen dataclass with typed fields for all 16 config variables; secrets masked in `__repr__`/`__str__`
+- `load_settings(env_path: str | None = None) -> Settings` — loads `.env`, validates, coerces types, returns Settings; accepts explicit path for testing
+- `settings: Settings` — module-level singleton; import via `from src.config.settings import settings`
+
+**Reads from:** `.env` file (via python-dotenv) and `os.environ`
+
+**Writes to:** nothing — read-only configuration loader
+
+**Called by:** every module that needs configuration (imports `settings` singleton)
+
+**Calls:** `python-dotenv` (dotenv.load_dotenv), `os.environ`, Python stdlib (`dataclasses`, `os`)
+
+**Key constants / thresholds relevant to debugging:**
+- Always-required variables (absent = startup failure): `PAPER_TRADING`, `MAX_TRADE_AMOUNT`, `DATABASE_URL`, `LOG_LEVEL`, `GROQ_API_KEY`, `GEMINI_API_KEY`, `GITHUB_PAT`, `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID`
+- Optional with safety default: `LIVE_TRADING` → `False` (never accidentally goes live)
+- Phase-gated (absent → `None`, no error): `SHOONYA_USER`, `SHOONYA_PASSWORD`, `SHOONYA_TOTP_SECRET`, `FYERS_API_KEY`, `BRAVE_API_KEY`, `GMAIL_CREDENTIALS`
+- `MAX_TRADE_AMOUNT` hard cap: must be positive int ≤ 10000
+- `DATABASE_URL` must start with `sqlite:///`
+- `LOG_LEVEL` must be one of `DEBUG`/`INFO`/`WARNING`/`ERROR`
+- Safety interlock: `LIVE_TRADING=true` + `PAPER_TRADING=true` simultaneously → `ConfigurationError`
+- Secret masking: 11 fields masked with `***` in repr; phase-gated None fields shown as `None`
+
 ## src/data/validator.py
 
 **Purpose:** Data quality gate — validates OHLCV and fundamentals DataFrames for corruption, coverage gaps, and time-series holes before any strategy logic runs.
