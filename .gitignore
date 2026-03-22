@@ -26,3 +26,5 @@ logs/
 # OS
 .DS_Store
 Thumbs.db
+gmail_credentials.json
+token.json
