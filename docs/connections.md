@@ -36,6 +36,31 @@
 - Safety interlock: `LIVE_TRADING=true` + `PAPER_TRADING=true` simultaneously → `ConfigurationError`
 - Secret masking: 11 fields masked with `***` in repr; phase-gated None fields shown as `None`
 
+## src/data/cleaner.py
+
+**Purpose:** Best-effort OHLCV data repair layer — forward-fills missing prices, removes duplicate dates, and flags anomalies (negative prices, OHLCV inconsistencies, price floor violations). Sits between fetcher and validator in the pipeline.
+
+**Public API:**
+- `clean_ohlcv(df: pd.DataFrame, price_floor: float = 1.0) -> tuple[pd.DataFrame, CleaningReport]` — cleans a normalised OHLCV DataFrame; returns cleaned copy and audit report
+- `class CleaningReport` — frozen dataclass with fields: symbols_processed, rows_input, rows_output, duplicates_removed, missing_close_filled, missing_ohlv_filled, negative_price_flags, consistency_flags, price_floor_flags, cleaned_at_ist
+
+**Reads from:** pd.DataFrame passed by caller (no external sources)
+
+**Writes to:** nothing — returns cleaned DataFrame and CleaningReport; logging to stdout only
+
+**Called by:** main.py (Phase 1), Data Collector Agent (Phase 4)
+
+**Calls:** src.config.settings (log_level), pandas, Python stdlib logging/dataclasses/zoneinfo
+
+**Key constants / thresholds relevant to debugging:**
+- `PRICE_FLOOR = 1.0` — data sanity threshold (NOT the strategy's ₹50 filter — that's quality_filter.py)
+- `AGENT_NAME = "cleaner"` — for future logger.py integration
+- Cleaning order: schema validation → negative price flags → consistency flags → missing value fill → duplicate removal → price floor flags
+- Forward-fill is scoped per symbol group — never bleeds across symbol boundaries
+- Anomalous rows are NEVER dropped — only flagged in CleaningReport
+- Duplicate dates: last occurrence kept (`keep="last"`), count in `duplicates_removed`
+- Input DataFrame is never mutated — operates on `df.copy()`
+
 ## src/data/fetcher.py
 
 **Purpose:** OHLCV data acquisition layer — fetches historical price data for NSE stocks and sector indices from yfinance (primary) with jugaad-data fallback, caches results to CSV in data/cache/.

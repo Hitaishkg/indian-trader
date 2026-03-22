@@ -26,3 +26,11 @@
 **Notes**: Module is the mandatory first build in Phase 1. No mocks — validates real data. DataQualityError halts the pipeline if universe_quality_score < 0.6. Scoring: ROE plausibility 0.40 weight, ROE present 0.10, OHLCV gaps 0.50. D/E coverage below 80% deducts 0.10 from all per-stock scores.
 
 <!-- Docs Agent: prepend new session entries above this line -->
+
+## [2026-03-22] — Data Cleaner (src/data/cleaner.py)
+**Built**: Best-effort OHLCV repair module — forward-fills missing prices (per-symbol, no cross-symbol bleed), removes duplicate dates (keep last), and flags anomalies (negative prices, high < low, price floor) without ever dropping rows.
+**Connects to**: Receives DataFrame from fetcher.py. Returns cleaned DataFrame + CleaningReport to caller. No DB writes, no external calls. Imports settings singleton for log_level only.
+**Next step**: src/data/fundamentals.py — Screener.in scraper with 45-day cache and yfinance fallback (Phase 1, step 5 of 9)
+**Notes**: Deliberately does not import _validate_ohlcv_df from validator.py — duplicates the schema check to avoid private API coupling. Price floor of 1.0 INR is data sanity only (not the strategy's 50 INR filter). Code Reviewer noted clean_ohlcv does not re-sort output — acceptable since fetcher output is always pre-sorted. 30/30 tests passing.
+
+## [2026-03-22] — Data Fetcher (src/data/fetcher.py)
