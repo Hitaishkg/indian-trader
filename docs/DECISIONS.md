@@ -7,6 +7,12 @@
 
 ---
 
+## [2026-03-22] — Fundamentals Fetcher (src/data/fundamentals.py)
+**Built**: Screener.in scraper with 45-day JSON cache, 3-strike yfinance fallback, and P/E cross-validation between sources. Returns fundamentals DataFrame matching validator.py Section 5.2 contract plus quality metadata columns.
+**Connects to**: Reads from Screener.in and yfinance APIs. Writes JSON cache to data/cache/. Imports settings singleton for log_level. Output consumed by validator.py (roe + debt_to_equity) and quality_filter.py (Phase 2, all fields).
+**Next step**: src/utils/logger.py — structured logging to SQLite agent_logs table (Phase 1, step 6 of 9)
+**Notes**: JSON cache (not CSV) chosen for sparse structured data. _read_stale_cache separate from _read_cache enables graceful degradation when both sources fail (returns stale data flagged as fundamentals_stale rather than crashing). Cross-validation excluded for yfinance fallback to avoid self-referential comparison. yfinance eps_positive_4q uses trailingEps > 0 — documented approximation since per-quarter data unavailable from yfinance. Strike counter is loop-local (resets per symbol per call). new deps: requests>=2.31.0, beautifulsoup4>=4.12.0. 31/31 tests passing.
+
 ## [2026-03-22] — Data Fetcher (src/data/fetcher.py)
 **Built**: OHLCV data acquisition layer with yfinance primary source, jugaad-data fallback, and CSV cache in data/cache/. Returns DataFrames matching the validator.py Section 5.1 contract exactly.
 **Connects to**: Reads from yfinance API and jugaad-data NSE API. Writes CSV cache files to data/cache/ (gitignored). Imports settings singleton for log_level. Output consumed by cleaner.py (Phase 1 step 4).

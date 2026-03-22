@@ -61,6 +61,33 @@
 - Duplicate dates: last occurrence kept (`keep="last"`), count in `duplicates_removed`
 - Input DataFrame is never mutated — operates on `df.copy()`
 
+## src/data/fundamentals.py
+
+**Purpose:** Fundamental data acquisition layer — scrapes ROE, D/E, quarterly EPS, and P/E from Screener.in for NSE stocks, caches as JSON in data/cache/ with 45-day expiry, falls back to yfinance after 3 consecutive Screener.in failures, and cross-validates P/E between sources.
+
+**Public API:**
+- `fetch_fundamentals(symbols: list[str], force_refresh: bool = False) -> pd.DataFrame` — returns one row per symbol with all fundamental fields; never raises on individual symbol failure (failed symbols included with NaN values)
+- `get_cache_age_days(symbol: str) -> float | None` — returns cache age in days or None if no cache exists
+
+**Reads from:** Screener.in (primary), yfinance API (fallback), data/cache/{SYMBOL}_fundamentals.json (cache)
+
+**Writes to:** data/cache/{SYMBOL}_fundamentals.json (JSON cache, 45-day expiry, gitignored)
+
+**Called by:** main.py (Phase 1), src/strategy/quality_filter.py (Phase 2), Screener Agent (Phase 4)
+
+**Calls:** requests (Screener.in HTTP), beautifulsoup4 (HTML parsing), yfinance (fallback + cross-validation), src.config.settings (log_level)
+
+**Key constants / thresholds relevant to debugging:**
+- `CACHE_EXPIRY_SECONDS = 45 * 86400` — 45-day cache for quarterly fundamentals
+- `MAX_STRIKES = 3` — consecutive Screener.in failures before yfinance fallback
+- `PE_CROSS_VALIDATION_THRESHOLD = 0.20` — 20% P/E deviation triggers stale_data flag
+- `DE_NORMALISATION_THRESHOLD = 10.0` — yfinance D/E values above this are ÷100 (percentage form)
+- `data_quality` values: "clean" / "degraded" (yfinance fallback) / "stale_data" (P/E mismatch) / "fundamentals_stale" (>45 days old) / "failed"
+- Stale cache (>45 days): returned with data_quality="fundamentals_stale" when fresh fetch fails — pipeline degrades gracefully rather than crashing
+- Cross-validation: only runs on Screener.in data, not on yfinance fallback (would be self-referential)
+- eps_positive_4q: from yfinance fallback uses trailingEps > 0 (approximation — cannot detect single negative quarter within positive trailing year)
+- Screener.in scraping: 2–5 second random delay before each request; consolidated URL tried first, standalone fallback
+
 ## src/data/fetcher.py
 
 **Purpose:** OHLCV data acquisition layer — fetches historical price data for NSE stocks and sector indices from yfinance (primary) with jugaad-data fallback, caches results to CSV in data/cache/.
