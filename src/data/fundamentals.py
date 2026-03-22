@@ -384,50 +384,55 @@ def _scrape_screener(symbol: str) -> _FundamentalsCache | None:
     if roe is None:
         logger.warning("Could not extract roe from Screener.in for %s", symbol)
 
-    # --- D/E ---
-    de_elem = soup.find(
-        lambda tag: tag.name in ("li", "td", "span")
-        and tag.string
-        and (
-            "Debt to equity" in tag.string
-            or "Debt / Equity" in tag.string
-        )
-    )
-    if de_elem is not None:
-        try:
-            value_span = de_elem.find_next("span", class_="number")
-            if value_span is None:
-                value_span = de_elem.find_next(
-                    lambda t: t.name in ("span", "td") and t.string and t.string.strip()
-                )
-            if value_span is not None and value_span.string:
-                raw_de = value_span.string.strip().replace(",", "")
-                debt_to_equity = float(raw_de)
-        except (AttributeError, ValueError):
+    # --- D/E (computed from Balance Sheet: Borrowings / (Equity Capital + Reserves)) ---
+    # Screener.in does not display D/E as a named ratio. It must be derived from
+    # the annual Balance Sheet table using the most recent year's column (last td).
+    equity_capital: float | None = None
+    reserves: float | None = None
+    borrowings: float | None = None
+
+    for section in soup.find_all("section"):
+        heading = section.find(["h2", "h3"])
+        if not (heading and "Balance Sheet" in heading.get_text()):
+            continue
+        table = section.find("table")
+        if table is None:
+            break
+        for row in table.find_all("tr"):
+            label_td = row.find("td", class_="text")
+            if label_td is None:
+                continue
+            label = label_td.get_text(strip=True).rstrip("+")
+            all_tds = row.find_all("td")
+            if len(all_tds) < 2:
+                continue
+            latest_raw = all_tds[-1].get_text(strip=True).replace(",", "")
+            try:
+                val = float(latest_raw) if latest_raw else None
+            except ValueError:
+                val = None
+            if label == "Equity Capital":
+                equity_capital = val
+            elif label == "Reserves":
+                reserves = val
+            elif label in ("Borrowings", "Borrowing"):
+                borrowings = val
+        break  # Balance Sheet section found and parsed
+
+    if equity_capital is not None and reserves is not None and borrowings is not None:
+        equity_total = equity_capital + reserves
+        if equity_total > 0:
+            debt_to_equity = borrowings / equity_total
+        else:
             logger.warning(
-                "Could not extract debt_to_equity from Screener.in for %s", symbol
+                "Balance Sheet equity is zero or negative for %s — cannot compute D/E",
+                symbol,
             )
     else:
-        for tag in soup.find_all("li"):
-            text = tag.get_text(separator=" ", strip=True)
-            if "Debt to equity" in text or "Debt / Equity" in text:
-                try:
-                    spans = tag.find_all("span")
-                    for sp in spans:
-                        raw = sp.get_text(strip=True).replace(",", "")
-                        if raw:
-                            debt_to_equity = float(raw)
-                            break
-                except (AttributeError, ValueError):
-                    logger.warning(
-                        "Could not extract debt_to_equity from Screener.in for %s",
-                        symbol,
-                    )
-                break
-
-    if debt_to_equity is None:
         logger.warning(
-            "Could not extract debt_to_equity from Screener.in for %s", symbol
+            "Could not extract debt_to_equity from Screener.in for %s"
+            " (Equity Capital=%s Reserves=%s Borrowings=%s)",
+            symbol, equity_capital, reserves, borrowings,
         )
 
     # --- P/E ---
