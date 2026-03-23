@@ -108,6 +108,26 @@
 
 **Key constants/thresholds:** `_VALID_LEVELS = frozenset({"DEBUG","INFO","WARNING","ERROR","CRITICAL"})`. WAL mode pragmas applied on first DB connection. SQLiteHandler is thread-safe via `threading.Lock`.
 
+## src/utils/notifier.py
+
+**Purpose:** Dual-channel notification delivery — Telegram Bot API and Gmail API. Routes ALERT and CHECKPOINT to both channels; INFO to Telegram only. Phase-gated: skips channels gracefully when credentials are absent.
+
+**Public API:**
+- `send_alert(subject: str, message: str) -> dict[str, bool]` — sends to both Telegram and Gmail; logs CRITICAL if both fail
+- `send_checkpoint(subject: str, message: str) -> dict[str, bool]` — sends to both channels; for human trade approval requests
+- `send_info(message: str) -> dict[str, bool]` — Telegram only; gmail key is always False
+- `NotificationType` enum: ALERT, CHECKPOINT, INFO
+
+**Reads from:** `settings.telegram_bot_token`, `settings.telegram_chat_id`, `settings.gmail_credentials` (via `src.config.settings`); `token.json` at project root (OAuth token)
+
+**Writes to:** `agent_logs` table (via `log_agent_action()`); `token.json` at project root (on first Gmail OAuth authorization)
+
+**Called by:** All trading agents that need to notify the user (Execution Agent, Monitor Agent, Watchlist Builder, Reporter Agent — Phase 3/4). `main.py` in dry-run mode.
+
+**Calls:** `src.config.settings`, `src.utils.logger.log_agent_action()`, Telegram Bot API (`api.telegram.org`), Gmail API (`googleapis.com`)
+
+**Key constants/thresholds:** `_TELEGRAM_TIMEOUT = 10s`, `_TELEGRAM_MAX_LENGTH = 4096` chars (truncated). Gmail OAuth scopes: `gmail.send` only. Google library imports are lazy (inside `_build_gmail_service` only). `_gmail_service_cache` module-level — service object cached after first successful auth.
+
 ## src/data/fetcher.py
 
 **Purpose:** OHLCV data acquisition layer — fetches historical price data for NSE stocks and sector indices from yfinance (primary) with jugaad-data fallback, caches results to CSV in data/cache/.

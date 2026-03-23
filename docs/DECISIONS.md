@@ -7,6 +7,13 @@
 
 ---
 
+## [2026-03-22] — src/utils/notifier.py
+
+**Built**: Dual-channel Telegram + Gmail notification module with three types: ALERT and CHECKPOINT go to both channels, INFO goes to Telegram only.
+**Connects to**: Reads settings.telegram_bot_token, telegram_chat_id, gmail_credentials; writes to agent_logs via log_agent_action(); writes token.json on first Gmail OAuth; calls Telegram Bot API and Gmail API.
+**Next step**: src/execution/paper_trader.py — simulated order execution with realistic P&L tracking (Phase 1, step 8 of 9)
+**Notes**: Gmail OAuth requires one-time browser authorization on first run. token.json and gmail_credentials.json are gitignored. Google library imports are lazy (inside _build_gmail_service only) — Telegram works even if Google packages not installed. _gmail_service_cache caches the built service object in memory across calls.
+
 ## [2026-03-22] — src/utils/logger.py
 
 **Built**: SQLite-backed structured logging module; configures root logger with dual output (stderr + agent_logs table), thread-safe SQLiteHandler with public write_row() method.

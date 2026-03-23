@@ -27,7 +27,7 @@ Zero delivery brokerage. CNC orders with GTT stop-losses.
 | src/data/cleaner.py | Missing value handling, anomaly flagging | 1 | ✅ Built |
 | src/data/fundamentals.py | Screener.in scraper with fallback + cache | 1 | ✅ Built |
 | src/utils/logger.py | Structured logging to SQLite agent_logs | 1 | ✅ Built |
-| src/utils/notifier.py | Telegram + Gmail notifications (both always) | 1 | ⏳ Pending |
+| src/utils/notifier.py | Telegram + Gmail notifications (both always) | 1 | ✅ Built |
 | src/execution/paper_trader.py | Simulated orders with P&L tracking | 1 | ⏳ Pending |
 | src/indicators/technical.py | RSI, MACD, Bollinger Bands, ATR | 2 | ⏳ Pending |
 | src/strategy/quality_filter.py | 5-filter hard pass/fail screen | 2 | ⏳ Pending |
