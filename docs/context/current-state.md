@@ -14,8 +14,19 @@
 | src/execution/paper_trader.py | ✅ Built | Simulated CNC orders; orders/positions/trades tables; GTT simulation; WAL mode |
 | main.py | ✅ Code review passed | Step 9: End-to-end dry-run pipeline. Spec: docs/specs/2026-03-24-main.md |
 
-## Phase 2–6
+## Phase 2 — Strategy Core
+
+| Module | Status | Notes |
+|--------|--------|-------|
+| src/indicators/technical.py | 📝 Spec written, awaiting approval | Spec: docs/specs/2026-03-24-technical-indicators.md |
+| src/strategy/quality_filter.py | ⬜ Not started | |
+| src/strategy/momentum.py | ⬜ Not started | |
+| src/strategy/regime.py | ⬜ Not started | |
+| src/backtest/runner.py | ⬜ Not started | |
+| src/backtest/validator.py | ⬜ Not started | |
+
+## Phase 3–6
 ⬜ Not started
 
 ## Next Action
-Build **main.py** — end-to-end dry-run pipeline (Phase 1, step 9 of 9). Ties together validator → fetcher → cleaner → fundamentals → logger → notifier → paper_trader in one full pipeline run.
+Review and approve spec for **src/indicators/technical.py** (Phase 2, step 1 of 7). Spec at docs/specs/2026-03-24-technical-indicators.md.
