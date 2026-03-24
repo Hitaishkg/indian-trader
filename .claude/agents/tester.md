@@ -1,6 +1,6 @@
 ---
 name: tester
-model: claude-haiku-4-5
+model: haiku
 tools:
   - Read
   - Write

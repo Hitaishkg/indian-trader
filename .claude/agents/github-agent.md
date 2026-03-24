@@ -1,6 +1,6 @@
 ---
 name: github-agent
-model: claude-haiku-4-5
+model: haiku
 tools:
   - Bash
 description: Git commit and push agent. Triggered after the Code Reviewer outputs PASS. Stages all changes, writes a meaningful commit message, pushes to GitHub, opens a PR if on a feature branch. Cannot merge PRs.

@@ -1,6 +1,6 @@
 ---
 name: architect
-model: claude-opus-4-5
+model: opus
 tools:
   - Read
   - Write

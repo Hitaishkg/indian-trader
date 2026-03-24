@@ -18,7 +18,7 @@
 
 | Module | Status | Notes |
 |--------|--------|-------|
-| src/indicators/technical.py | 📝 Spec written, awaiting approval | Spec: docs/specs/2026-03-24-technical-indicators.md |
+| src/indicators/technical.py | ✅ Code review passed | Spec: docs/specs/2026-03-24-technical-indicators.md |
 | src/strategy/quality_filter.py | ⬜ Not started | |
 | src/strategy/momentum.py | ⬜ Not started | |
 | src/strategy/regime.py | ⬜ Not started | |
@@ -29,4 +29,4 @@
 ⬜ Not started
 
 ## Next Action
-Review and approve spec for **src/indicators/technical.py** (Phase 2, step 1 of 7). Spec at docs/specs/2026-03-24-technical-indicators.md.
+Build **src/strategy/quality_filter.py** (Phase 2, step 2 of 6). src/indicators/technical.py is code review passed and ready for use.

@@ -1,6 +1,6 @@
 ---
 name: code-reviewer
-model: claude-sonnet-4-5
+model: sonnet
 tools:
   - Read
   - Write
