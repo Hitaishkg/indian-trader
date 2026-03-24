@@ -44,6 +44,12 @@
 - `send_info(message: str) -> dict[str, bool]` — sends INFO to Telegram only; gmail always False
 - `class NotificationType(Enum)` — ALERT, CHECKPOINT, INFO
 
+## src/indicators/technical.py
+
+- `add_indicators(df: pd.DataFrame, rsi_period: int = 14, macd_fast: int = 12, macd_slow: int = 26, macd_signal: int = 9, bb_length: int = 20, bb_std: float = 2.0, atr_period: int = 14) -> pd.DataFrame` — computes RSI, MACD, Bollinger Bands, ATR per symbol; returns new DataFrame with 8 added columns: rsi, macd, macd_signal, macd_hist, bb_upper, bb_mid, bb_lower, atr; raises ValueError on missing columns or empty input
+- `compute_atr_series(df: pd.DataFrame, period: int = 14) -> pd.Series` — standalone ATR (Wilder smoothing) for a single-symbol DataFrame; raises ValueError if high/low/close missing
+- Constants: `MINIMUM_LOOKBACK=26`, `RSI_PERIOD=14`, `MACD_FAST=12`, `MACD_SLOW=26`, `MACD_SIGNAL_PERIOD=9`, `BB_LENGTH=20`, `BB_STD=2.0`, `ATR_PERIOD=14`
+
 ## src/execution/paper_trader.py
 
 - `class PaperTrader` — simulated CNC swing trade execution engine; raises ValueError on construction if settings.live_trading is True
