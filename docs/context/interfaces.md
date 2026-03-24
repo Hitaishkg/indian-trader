@@ -43,3 +43,14 @@
 - `send_checkpoint(subject: str, message: str) -> dict[str, bool]` — sends CHECKPOINT to both channels
 - `send_info(message: str) -> dict[str, bool]` — sends INFO to Telegram only; gmail always False
 - `class NotificationType(Enum)` — ALERT, CHECKPOINT, INFO
+
+## src/execution/paper_trader.py
+
+- `class PaperTrader` — simulated CNC swing trade execution engine; raises ValueError on construction if settings.live_trading is True
+- `PaperTrader.__init__(db_path: str | None = None) -> None` — opens SQLite connection with WAL pragmas; creates orders, trades, positions tables if not present; db_path derived from settings.database_url when None
+- `PaperTrader.place_order(symbol: str, side: str, quantity: int, entry_price: float, stop_loss: float, take_profit: float) -> int` — writes PENDING order to orders table BEFORE simulating fill; opens position (BUY) or closes position (SELL); returns orders.id
+- `PaperTrader.close_position(symbol: str, exit_price: float, exit_reason: str) -> int` — writes PENDING SELL order, inserts completed trade into trades table, removes from positions; exit_reason in {"STOP_LOSS","TAKE_PROFIT","MANUAL_EXIT","REGIME_TIGHTENED"}; returns trades.id
+- `PaperTrader.get_positions() -> list[dict[str, object]]` — returns all rows from positions table as list of dicts; empty list if no open positions
+- `PaperTrader.get_pnl() -> dict[str, float]` — returns {"realized_pnl", "unrealized_pnl", "total_pnl", "trade_count", "win_count", "loss_count"} aggregated from trades and positions tables
+- `PaperTrader.check_gtts(current_prices: dict[str, float]) -> list[dict[str, object]]` — checks all open positions against stop_loss/take_profit; triggers close_position on hit; updates unrealized P&L on no-hit; never raises; returns list of triggered dicts with keys symbol, exit_price, exit_reason, trade_id
+- `PaperTrader.update_stop_loss(symbol: str, new_stop_loss: float) -> None` — updates stop_loss in positions table; raises ValueError if no position or new_stop_loss >= entry_price
