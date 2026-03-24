@@ -45,10 +45,11 @@ _PROJECT_ROOT: str = os.path.dirname(
 _TOKEN_FILE: str = "token.json"  # stored in _PROJECT_ROOT
 
 # ---------------------------------------------------------------------------
-# Module-level mutable state — Gmail service cache
+# Module-level mutable state — Gmail service and address cache
 # ---------------------------------------------------------------------------
 
 _gmail_service_cache: Any = None
+_gmail_address_cache: str | None = None
 
 
 # ---------------------------------------------------------------------------
@@ -290,7 +291,8 @@ def _send_gmail(
         )
         return False
 
-    mime_message = _build_mime_message(notification_type, subject, message)
+    address = _get_gmail_address(service)
+    mime_message = _build_mime_message(notification_type, subject, message, address)
 
     raw_bytes = mime_message.as_bytes()
     encoded = base64.urlsafe_b64encode(raw_bytes).decode("ascii")
@@ -420,8 +422,40 @@ def _build_gmail_service() -> Any | None:
         return None
 
 
+def _get_gmail_address(service: Any) -> str | None:
+    """Fetch and cache the authenticated Gmail account address.
+
+    Calls service.users().getProfile(userId="me") on first invocation and
+    caches the result in _gmail_address_cache for all subsequent calls.
+
+    Args:
+        service: A built Gmail API service object.
+
+    Returns:
+        The email address string (e.g. "user@gmail.com"), or None on failure.
+    """
+    global _gmail_address_cache
+
+    if _gmail_address_cache is not None:
+        return _gmail_address_cache
+
+    try:
+        profile = service.users().getProfile(userId="me").execute()
+        address: str = profile["emailAddress"]
+        _gmail_address_cache = address
+        return address
+    except Exception as exc:
+        log_agent_action(
+            agent_name=_AGENT_NAME,
+            action=f"Gmail getProfile failed: {exc}",
+            level="ERROR",
+            result="error",
+        )
+        return None
+
+
 def _build_mime_message(
-    notification_type: NotificationType, subject: str, message: str
+    notification_type: NotificationType, subject: str, message: str, address: str | None
 ) -> MIMEText:
     """Construct a MIME email message ready for base64url encoding.
 
@@ -429,12 +463,16 @@ def _build_mime_message(
         notification_type: Used in the subject prefix.
         subject: The subject line content.
         message: The email body (plain text).
+        address: The authenticated Gmail address used for both From and To
+                 headers. Falls back to an empty string if None (should not
+                 happen in normal operation but prevents a header error).
 
     Returns:
         A MIMEText object with Subject, From, and To headers set.
     """
+    addr = address or ""
     msg = MIMEText(message, "plain")
     msg["Subject"] = f"[Indian Trader] {notification_type.value}: {subject}"
-    msg["From"] = "me"
-    msg["To"] = "me"
+    msg["From"] = addr
+    msg["To"] = addr
     return msg
