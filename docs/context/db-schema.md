@@ -19,6 +19,56 @@ Note: src/data/validator.py also writes to agent_logs directly (legacy schema, P
 
 ---
 
+## Phase 1 Tables (written by src/execution/paper_trader.py)
+
+### orders (written by: src/execution/paper_trader.py — place_order() and close_position())
+| Column | Type | Notes |
+|--------|------|-------|
+| id | INTEGER PRIMARY KEY AUTOINCREMENT | Auto-incrementing row ID |
+| symbol | TEXT | NSE ticker symbol |
+| order_type | TEXT | Always 'CNC' (delivery) during Phase 1-5 |
+| side | TEXT | 'BUY' or 'SELL' |
+| quantity | INTEGER | Shares, must be > 0 |
+| entry_price | REAL | Fill price in INR, must be > 0 |
+| stop_loss | REAL | Stop-loss trigger price in INR, must be > 0 |
+| take_profit | REAL | Take-profit trigger price in INR, must be > 0 |
+| order_id | TEXT | Paper trading order ID ("PAPER-{hex12}") |
+| gtt_sl_id | TEXT | Paper trading GTT stop-loss ID ("GTT-SL-{hex12}") or NULL for SELL orders |
+| gtt_tp_id | TEXT | Paper trading GTT take-profit ID ("GTT-TP-{hex12}") or NULL for SELL orders |
+| placed_at | TEXT | ISO 8601 IST timestamp when order written to DB |
+| status | TEXT | 'PENDING' initially, updated to 'FILLED' after position/trade written |
+
+### positions (written by: src/execution/paper_trader.py — place_order() BUY, closed by close_position())
+| Column | Type | Notes |
+|--------|------|-------|
+| id | INTEGER PRIMARY KEY AUTOINCREMENT | Auto-incrementing row ID |
+| symbol | TEXT | NSE ticker symbol, UNIQUE constraint (max 1 position per symbol) |
+| quantity | INTEGER | Shares held, must be > 0 |
+| entry_price | REAL | Entry price in INR, must be > 0 |
+| current_price | REAL | Last updated market price in INR, must be > 0; updated by check_gtts() |
+| stop_loss | REAL | Stop-loss level in INR, must be > 0; may be tightened by update_stop_loss() |
+| take_profit | REAL | Take-profit level in INR, must be > 0 |
+| pnl | REAL | Unrealised P&L in INR; updated by check_gtts() as current_price changes |
+| pnl_pct | REAL | Unrealised P&L as percentage; updated by check_gtts() |
+| opened_at | TEXT | ISO 8601 IST timestamp when position opened (same as order placed_at) |
+| updated_at | TEXT | ISO 8601 IST timestamp of last update (current_price, stop_loss, P&L) |
+
+### trades (written by: src/execution/paper_trader.py — close_position() and place_order() SELL execution)
+| Column | Type | Notes |
+|--------|------|-------|
+| id | INTEGER PRIMARY KEY AUTOINCREMENT | Auto-incrementing row ID |
+| symbol | TEXT | NSE ticker symbol |
+| quantity | INTEGER | Shares bought and sold, must be > 0 |
+| entry_price | REAL | Entry price in INR, must be > 0 |
+| exit_price | REAL | Exit price at stop-loss or take-profit, in INR, must be > 0 |
+| pnl | REAL | Realised P&L in INR (exit_price - entry_price) × quantity |
+| pnl_pct | REAL | Realised P&L as percentage ((exit_price - entry_price) / entry_price) × 100 |
+| exit_reason | TEXT | 'STOP_LOSS', 'TAKE_PROFIT', 'MANUAL_EXIT', or 'REGIME_TIGHTENED' |
+| opened_at | TEXT | ISO 8601 IST timestamp when position opened (from positions.opened_at) |
+| closed_at | TEXT | ISO 8601 IST timestamp when position closed |
+
+---
+
 ## Future Tables (written by Trading Layer agents — not yet built)
 
 ### market_data (written by: Data Collector Agent — Phase 4, step 1)

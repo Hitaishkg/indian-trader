@@ -7,6 +7,13 @@
 
 ---
 
+## [2026-03-24] — src/execution/paper_trader.py
+
+**Built**: CNC swing trade execution simulator with SQLite-backed orders, positions, trades tables and in-memory GTT simulation.
+**Connects to**: Reads/writes orders, positions, trades tables in SQLite; logs to agent_logs via logger.log_agent_action(); reads settings.live_trading (gate), settings.max_trade_amount (cap), settings.database_url (DB path).
+**Next step**: main.py — Phase 1 milestone, runs full pipeline in dry-run mode end-to-end (Phase 1, step 9 of 9).
+**Notes**: update_stop_loss() added vs original requirements (regime + LLM sentiment tightening both need it); REGIME_TIGHTENED kept as distinct exit_reason (audit trail); caller provides fill prices (paper_trader is pure execution simulator, not a data fetcher — same interface works for paper and live trading); every order written to orders table BEFORE position/trade execution (never after); WAL mode pragmas applied at init time; all prices INR float, all quantities int (no fractional shares); all timestamps IST ISO 8601 with timezone offset.
+
 ## [2026-03-22] — src/utils/notifier.py
 
 **Built**: Dual-channel Telegram + Gmail notification module with three types: ALERT and CHECKPOINT go to both channels, INFO goes to Telegram only.

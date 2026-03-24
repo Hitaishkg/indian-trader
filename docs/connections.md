@@ -156,6 +156,41 @@
 - Cache expiry default: 24 hours. Set cache_expiry_hours=0 to force fresh fetch.
 - Corrupt cache files are deleted and treated as cache miss (not an error)
 
+## src/execution/paper_trader.py
+
+**Purpose:** Simulated CNC swing trade execution engine with SQLite-backed orders, positions, and trades tables; GTT stop-loss and take-profit simulation without any broker API calls.
+
+**Public API:**
+- `class PaperTrader` — execution simulator for paper trading phases; raises ValueError at construction if settings.live_trading is True
+- `PaperTrader.__init__(db_path: str | None = None) -> None` — opens SQLite connection with WAL pragmas, creates orders/trades/positions tables, logs to agent_logs
+- `PaperTrader.place_order(symbol: str, side: str, quantity: int, entry_price: float, stop_loss: float, take_profit: float) -> int` — writes PENDING order BEFORE execution, creates/closes positions, returns orders.id
+- `PaperTrader.close_position(symbol: str, exit_price: float, exit_reason: str) -> int` — closes open position, writes completed trade, exit_reason in {STOP_LOSS, TAKE_PROFIT, MANUAL_EXIT, REGIME_TIGHTENED}, returns trades.id
+- `PaperTrader.get_positions() -> list[dict[str, object]]` — returns all open positions from positions table as list of dicts
+- `PaperTrader.get_pnl() -> dict[str, float]` — returns {realized_pnl, unrealized_pnl, total_pnl, trade_count, win_count, loss_count}
+- `PaperTrader.check_gtts(current_prices: dict[str, float]) -> list[dict[str, object]]` — checks stop-losses and take-profits, triggers close_position on hit, returns list of triggered dicts
+- `PaperTrader.update_stop_loss(symbol: str, new_stop_loss: float) -> None` — updates stop-loss in positions table (used by Monitor Agent for regime/LLM tightening)
+
+**Reads from:** positions, orders, trades tables in SQLite (state persistence, reads only on close_position and GTT checks)
+
+**Writes to:** orders, positions, trades tables in SQLite; agent_logs table (via log_agent_action)
+
+**Called by:** main.py (Phase 1 dry-run), Execution Agent (Phase 4), Monitor Agent (Phase 4 GTT reconciliation)
+
+**Calls:** src.config.settings (LIVE_TRADING gate, MAX_TRADE_AMOUNT), src.utils.logger.log_agent_action()
+
+**Key constants / thresholds relevant to debugging:**
+- `LIVE_TRADING=false` — gate enforced at construction; raises ValueError if true
+- `MAX_TRADE_AMOUNT` — hard cap checked in place_order; order_value = entry_price × quantity must be ≤ max_trade_amount
+- `_VALID_SIDES` frozenset: {"BUY", "SELL"}
+- `_VALID_EXIT_REASONS` frozenset: {"STOP_LOSS", "TAKE_PROFIT", "MANUAL_EXIT", "REGIME_TIGHTENED"}
+- All prices in INR as float; all quantities as int. No fractional shares.
+- All timestamps IST (Asia/Kolkata) in ISO 8601 format with timezone offset
+- BUY orders: stop_loss must be < entry_price, take_profit must be > entry_price
+- SELL orders: stop_loss must be > entry_price, take_profit must be < entry_price
+- GTT simulation: check_gtts() is called with current_prices dict; stops checked before take-profits (conservative)
+- Every order written to orders table BEFORE simulating execution (not after)
+- WAL mode pragmas applied at __init__ time (same as logger.py)
+
 ## src/data/validator.py
 
 **Purpose:** Data quality gate — validates OHLCV and fundamentals DataFrames for corruption, coverage gaps, and time-series holes before any strategy logic runs.

@@ -11,11 +11,11 @@
 | src/data/fundamentals.py | ✅ Built | Screener.in scraper; 45-day JSON cache, yfinance fallback |
 | src/utils/logger.py | ✅ Built | SQLite logging; StreamHandler + SQLiteHandler |
 | src/utils/notifier.py | ✅ Built | Telegram + Gmail notifications (both channels, always) |
-| src/execution/paper_trader.py | ✅ Built — code review passed | Simulated CNC orders; orders/positions/trades tables; GTT simulation; WAL mode |
+| src/execution/paper_trader.py | ✅ Built | Simulated CNC orders; orders/positions/trades tables; GTT simulation; WAL mode |
 | main.py | ⬜ Pending | Step 9: End-to-end dry-run pipeline |
 
 ## Phase 2–6
 ⬜ Not started
 
 ## Next Action
-Build **main.py** — end-to-end dry-run pipeline (Phase 1, step 9 of 9).
+Build **main.py** — end-to-end dry-run pipeline (Phase 1, step 9 of 9). Ties together validator → fetcher → cleaner → fundamentals → logger → notifier → paper_trader in one full pipeline run.

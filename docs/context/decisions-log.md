@@ -1,5 +1,7 @@
 # Decisions Log — Fast Reference
 
+[2026-03-24] paper_trader.py — update_stop_loss() added (not in original requirements) — needed for regime tightening (2× ATR → 1× ATR) and LLM sentiment tightening (confidence > 0.8 Negative); REGIME_TIGHTENED kept as own exit_reason distinct from MANUAL_EXIT (audit trail); caller provides prices (paper_trader is pure execution simulator only, not a price fetcher — same interface works for paper and live trading).
+
 [2026-03-22] validator.py — Module is mandatory first build in Phase 1. No mocks — validates real data. DataQualityError halts the pipeline if universe_quality_score < 0.6.
 
 [2026-03-22] settings.py — Phase-gated variables (SHOONYA_*, FYERS_API_KEY, BRAVE_API_KEY, GMAIL_CREDENTIALS) return None when absent — no startup error. Safety interlock prevents LIVE_TRADING and PAPER_TRADING from both being True.
