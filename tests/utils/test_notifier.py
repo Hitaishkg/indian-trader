@@ -54,16 +54,13 @@ def mock_settings(monkeypatch):
 
 @pytest.fixture
 def reset_gmail_cache():
-    """Reset the Gmail service and address caches before and after each test."""
+    """Reset the Gmail service cache before and after each test."""
     import src.utils.notifier as notifier_mod
 
-    original_service_cache = notifier_mod._gmail_service_cache
-    original_address_cache = notifier_mod._gmail_address_cache
+    original_cache = notifier_mod._gmail_service_cache
     notifier_mod._gmail_service_cache = None
-    notifier_mod._gmail_address_cache = None
     yield
-    notifier_mod._gmail_service_cache = original_service_cache
-    notifier_mod._gmail_address_cache = original_address_cache
+    notifier_mod._gmail_service_cache = original_cache
 
 
 # ============================================================================
@@ -584,13 +581,10 @@ def test_criterion_23_send_gmail_success_logs_ok(
 
         with patch("src.utils.notifier._build_gmail_service") as mock_service_builder, patch(
             "src.utils.notifier._build_mime_message"
-        ) as mock_mime, patch(
-            "src.utils.notifier._get_gmail_address"
-        ) as mock_get_address, patch("src.utils.notifier.log_agent_action") as mock_log:
+        ) as mock_mime, patch("src.utils.notifier.log_agent_action") as mock_log:
             mock_service = MagicMock()
             mock_service.users().messages().send().execute.return_value = {"id": "123"}
             mock_service_builder.return_value = mock_service
-            mock_get_address.return_value = "user@gmail.com"
 
             from email.mime.text import MIMEText
 
@@ -622,15 +616,12 @@ def test_criterion_24_send_gmail_api_error_cache_invalidation(
 
             with patch("src.utils.notifier._build_gmail_service") as mock_service_builder, patch(
                 "src.utils.notifier._build_mime_message"
-            ) as mock_mime, patch(
-                "src.utils.notifier._get_gmail_address"
-            ) as mock_get_address, patch("src.utils.notifier.log_agent_action") as mock_log:
+            ) as mock_mime, patch("src.utils.notifier.log_agent_action") as mock_log:
                 mock_service = MagicMock()
                 mock_service.users().messages().send().execute.side_effect = Exception(
                     "API Error"
                 )
                 mock_service_builder.return_value = mock_service
-                mock_get_address.return_value = "user@gmail.com"
 
                 from email.mime.text import MIMEText
 
@@ -652,7 +643,7 @@ def test_criterion_25_send_gmail_subject_format(
     """Criterion 25: Email subject format is '[Indian Trader] {TYPE}: {subject}'."""
     from src.utils.notifier import _build_mime_message
 
-    mime_msg = _build_mime_message(NotificationType.ALERT, "Kill Switch", "body", "user@gmail.com")
+    mime_msg = _build_mime_message(NotificationType.ALERT, "Kill Switch", "body")
 
     subject = mime_msg["Subject"]
     assert subject == "[Indian Trader] ALERT: Kill Switch"
@@ -740,16 +731,16 @@ def test_criterion_28_build_gmail_service_cache_persists(reset_gmail_cache):
 
 
 def test_criterion_29_build_mime_message_headers(mock_settings, reset_gmail_cache):
-    """Criterion 29: MIME message uses real Gmail address (not 'me') for From and To headers."""
+    """Criterion 29: MIME message has correct Subject, From ('me'), To ('me') headers."""
     from src.utils.notifier import _build_mime_message
 
     mime_msg = _build_mime_message(
-        NotificationType.CHECKPOINT, "Test Subject", "Test Body", "user@gmail.com"
+        NotificationType.CHECKPOINT, "Test Subject", "Test Body"
     )
 
     assert mime_msg["Subject"] == "[Indian Trader] CHECKPOINT: Test Subject"
-    assert mime_msg["From"] == "user@gmail.com"
-    assert mime_msg["To"] == "user@gmail.com"
+    assert mime_msg["From"] == "me"
+    assert mime_msg["To"] == "me"
 
 
 def test_criterion_30_build_mime_message_body(mock_settings, reset_gmail_cache):
@@ -757,7 +748,7 @@ def test_criterion_30_build_mime_message_body(mock_settings, reset_gmail_cache):
     from src.utils.notifier import _build_mime_message
 
     body_text = "This is the email body content."
-    mime_msg = _build_mime_message(NotificationType.ALERT, "Subject", body_text, "user@gmail.com")
+    mime_msg = _build_mime_message(NotificationType.ALERT, "Subject", body_text)
 
     # Get the payload (body)
     payload = mime_msg.get_payload()
