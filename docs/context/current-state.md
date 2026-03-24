@@ -11,7 +11,7 @@
 | src/data/fundamentals.py | ✅ Built | Screener.in scraper; 45-day JSON cache, yfinance fallback |
 | src/utils/logger.py | ✅ Built | SQLite logging; StreamHandler + SQLiteHandler |
 | src/utils/notifier.py | ✅ Built | Telegram + Gmail notifications (both channels, always) |
-| src/execution/paper_trader.py | ⬜ Next | Step 8: Simulated orders with realistic P&L tracking |
+| src/execution/paper_trader.py | Spec written, awaiting approval | Step 8: Simulated orders with realistic P&L tracking |
 | main.py | ⬜ Pending | Step 9: End-to-end dry-run pipeline |
 
 ## Phase 2–6
