@@ -258,6 +258,7 @@ def main() -> None:
         print()
         print(f"Telegram notification: {telegram_status}")
         print("========================================")
+        print("Phase 1 COMPLETE")
 
     except ConfigurationError as exc:
         log_agent_action("main", f"Configuration error: {exc}", level="ERROR", result="error")

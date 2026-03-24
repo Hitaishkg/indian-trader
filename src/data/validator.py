@@ -12,11 +12,12 @@ import datetime
 import json
 import math
 import sqlite3
-import sys
 from dataclasses import dataclass
 from zoneinfo import ZoneInfo
 
 import pandas as pd
+
+from src.utils.logger import log_agent_action
 
 # ---------------------------------------------------------------------------
 # Module-level constants (domain rules — not configurable via env vars)
@@ -112,10 +113,6 @@ def _now_ist() -> datetime.datetime:
     """Return the current datetime in IST."""
     return datetime.datetime.now(_IST)
 
-
-def _ist_isoformat() -> str:
-    """Return current IST time as ISO 8601 string with second precision."""
-    return _now_ist().isoformat(timespec="seconds")
 
 
 def _check_roe(
@@ -256,79 +253,6 @@ def _open_db(db_path: str) -> sqlite3.Connection:
     return conn
 
 
-def _ensure_agent_logs_table(conn: sqlite3.Connection) -> None:
-    """Create agent_logs table if it does not exist.
-
-    Args:
-        conn: Open SQLite connection.
-    """
-    conn.execute(
-        """
-        CREATE TABLE IF NOT EXISTS agent_logs (
-            id                 INTEGER PRIMARY KEY AUTOINCREMENT,
-            agent_name         TEXT    NOT NULL,
-            event_type         TEXT    NOT NULL,
-            symbol             TEXT,
-            detail             TEXT,
-            data_quality_score REAL,
-            timestamp_ist      TEXT    NOT NULL
-        );
-        """
-    )
-    conn.commit()
-
-
-def _log_event(
-    conn: sqlite3.Connection,
-    event_type: str,
-    symbol: str | None,
-    detail: object,
-    data_quality_score: float | None,
-) -> None:
-    """Write a single row to agent_logs.
-
-    Args:
-        conn: Open SQLite connection.
-        event_type: One of the defined event_type values.
-        symbol: NSE ticker symbol or None for universe-level events.
-        detail: Detail dict/str to JSON-serialise, or None.
-        data_quality_score: Float 0.0-1.0 or None.
-    """
-    if detail is None:
-        detail_str: str | None = None
-    elif isinstance(detail, str):
-        detail_str = detail
-    else:
-        try:
-            detail_str = json.dumps(detail)
-        except (TypeError, ValueError):
-            detail_str = str(detail)
-
-    try:
-        conn.execute(
-            """
-            INSERT INTO agent_logs
-                (agent_name, event_type, symbol, detail, data_quality_score, timestamp_ist)
-            VALUES (?, ?, ?, ?, ?, ?)
-            """,
-            (
-                AGENT_NAME,
-                event_type,
-                symbol,
-                detail_str,
-                data_quality_score,
-                _ist_isoformat(),
-            ),
-        )
-        conn.commit()
-    except (sqlite3.OperationalError, sqlite3.DatabaseError):
-        print(
-            f"[validator] Failed to write event_type={event_type} symbol={symbol} "
-            f"to agent_logs",
-            file=sys.stderr,
-        )
-        raise
-
 
 def _validate_ohlcv_df(ohlcv_df: pd.DataFrame) -> None:
     """Check that ohlcv_df has all required columns and timezone-aware dates.
@@ -427,10 +351,9 @@ def validate_data(
     _validate_ohlcv_df(ohlcv_df)
     _validate_fundamentals_df(fundamentals_df)
 
-    # --- Open database and ensure schema ---
+    # --- Open database ---
     conn = _open_db(db_path)
     try:
-        _ensure_agent_logs_table(conn)
         return _run_validation(
             ohlcv_df=ohlcv_df,
             fundamentals_df=fundamentals_df,
@@ -480,22 +403,17 @@ def _run_validation(
             checked_at_ist=checked_at_ist,
             universe_size=0,
         )
-        _log_event(
-            conn,
-            "universe_score",
-            None,
-            {"universe_quality_score": 0.0, "reason": "empty universe"},
-            0.0,
+        log_agent_action(
+            agent_name=AGENT_NAME,
+            action="universe_score: {'universe_quality_score': 0.0, 'reason': 'empty universe'}",
+            symbol=None,
+            data_quality_score=0.0,
         )
-        _log_event(
-            conn,
-            "data_quality_error",
-            None,
-            {
-                "universe_quality_score": 0.0,
-                "reason": "fundamentals_df is empty — zero symbols",
-            },
-            0.0,
+        log_agent_action(
+            agent_name=AGENT_NAME,
+            action="data_quality_error: fundamentals_df is empty — zero symbols",
+            symbol=None,
+            data_quality_score=0.0,
         )
         raise DataQualityError(0.0, empty_report)
 
@@ -536,7 +454,12 @@ def _run_validation(
             "passed": passed,
             "reason": detail_str,
         }
-        _log_event(conn, "roe_check", symbol, roe_detail, None)
+        log_agent_action(
+            agent_name=AGENT_NAME,
+            action=f"roe_check: {json.dumps(roe_detail)}",
+            symbol=symbol,
+            data_quality_score=None,
+        )
 
     # --- Phase 2: D/E coverage check (universe-level) ---
     de_present_count = sum(
@@ -552,20 +475,20 @@ def _run_validation(
         "present_count": de_present_count,
         "total_count": universe_size,
     }
-    _log_event(conn, "de_coverage_check", None, de_check_detail, None)
+    log_agent_action(
+        agent_name=AGENT_NAME,
+        action=f"de_coverage_check: {json.dumps(de_check_detail)}",
+        symbol=None,
+        data_quality_score=None,
+    )
 
     if de_coverage_low:
         missing_count = universe_size - de_present_count
-        _log_event(
-            conn,
-            "data_coverage_low",
-            None,
-            {
-                "de_coverage_ratio": round(de_coverage_ratio, 6),
-                "missing_count": missing_count,
-                "total_count": universe_size,
-            },
-            None,
+        log_agent_action(
+            agent_name=AGENT_NAME,
+            action=f"data_coverage_low: de_coverage_ratio={round(de_coverage_ratio, 6)} missing_count={missing_count} total_count={universe_size}",
+            symbol=None,
+            data_quality_score=None,
         )
 
     # --- Phase 3: OHLCV gap checks (per stock) ---
@@ -590,7 +513,12 @@ def _run_validation(
         if symbol not in ohlcv_by_symbol:
             gap_detail["note"] = "symbol absent from ohlcv_df — gap_score set to 0.0"
 
-        _log_event(conn, "ohlcv_gap_check", symbol, gap_detail, None)
+        log_agent_action(
+            agent_name=AGENT_NAME,
+            action=f"ohlcv_gap_check: {json.dumps(gap_detail)}",
+            symbol=symbol,
+            data_quality_score=None,
+        )
 
     # --- Phase 4: Per-stock scores ---
     per_stock_scores_raw: dict[str, float] = {}
@@ -632,7 +560,12 @@ def _run_validation(
             "gap_score": gap_score_log,
             "de_deduction": 0.0,  # Will be updated if de_coverage_low
         }
-        _log_event(conn, "stock_score", symbol, stock_score_detail, stock_score)
+        log_agent_action(
+            agent_name=AGENT_NAME,
+            action=f"stock_score: {json.dumps(stock_score_detail)}",
+            symbol=symbol,
+            data_quality_score=stock_score,
+        )
 
     # --- Phase 5: Apply D/E deduction if coverage is low ---
     per_stock_scores: dict[str, float]
@@ -667,24 +600,23 @@ def _run_validation(
                 "gap_score": gap_score_log,
                 "de_deduction": 0.10,
             }
-            _log_event(conn, "stock_score", sym, corrected_detail, corrected_score)
+            log_agent_action(
+                agent_name=AGENT_NAME,
+                action=f"stock_score: {json.dumps(corrected_detail)}",
+                symbol=sym,
+                data_quality_score=corrected_score,
+            )
     else:
         per_stock_scores = per_stock_scores_raw
 
     # --- Phase 6: Universe quality score ---
     universe_quality_score = sum(per_stock_scores.values()) / len(per_stock_scores)
 
-    _log_event(
-        conn,
-        "universe_score",
-        None,
-        {
-            "universe_quality_score": round(universe_quality_score, 6),
-            "universe_size": universe_size,
-            "de_coverage_ratio": round(de_coverage_ratio, 6),
-            "de_coverage_low": de_coverage_low,
-        },
-        universe_quality_score,
+    log_agent_action(
+        agent_name=AGENT_NAME,
+        action=f"universe_score: universe_quality_score={round(universe_quality_score, 6)} universe_size={universe_size} de_coverage_ratio={round(de_coverage_ratio, 6)} de_coverage_low={de_coverage_low}",
+        symbol=None,
+        data_quality_score=universe_quality_score,
     )
 
     # --- Build final report ---
@@ -702,15 +634,11 @@ def _run_validation(
 
     # --- Raise DataQualityError if score below threshold (after report is built) ---
     if universe_quality_score < UNIVERSE_QUALITY_THRESHOLD:
-        _log_event(
-            conn,
-            "data_quality_error",
-            None,
-            {
-                "universe_quality_score": round(universe_quality_score, 6),
-                "threshold": UNIVERSE_QUALITY_THRESHOLD,
-            },
-            universe_quality_score,
+        log_agent_action(
+            agent_name=AGENT_NAME,
+            action=f"data_quality_error: universe_quality_score={round(universe_quality_score, 6)} threshold={UNIVERSE_QUALITY_THRESHOLD}",
+            symbol=None,
+            data_quality_score=universe_quality_score,
         )
         raise DataQualityError(universe_quality_score, report)
 

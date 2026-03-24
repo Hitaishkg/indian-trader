@@ -9,6 +9,8 @@ from pathlib import Path
 import pandas as pd
 import pytest
 
+import logging
+
 from src.data.validator import (
     DataQualityError,
     DataQualityReport,
@@ -17,6 +19,28 @@ from src.data.validator import (
     _compute_stock_score,
     validate_data,
 )
+from src.utils.logger import SQLiteHandler, setup_logging
+
+
+@pytest.fixture
+def clean_logging() -> None:
+    """Remove any SQLiteHandler from the root logger before and after a test.
+
+    This prevents the setup_logging() idempotency guard from re-using a
+    SQLiteHandler that points to a *different* test's tmp_db_path.
+    """
+    root = logging.getLogger()
+    # Remove existing SQLiteHandlers before the test
+    for handler in list(root.handlers):
+        if isinstance(handler, SQLiteHandler):
+            handler.close()
+            root.removeHandler(handler)
+    yield
+    # Remove SQLiteHandlers created during the test
+    for handler in list(root.handlers):
+        if isinstance(handler, SQLiteHandler):
+            handler.close()
+            root.removeHandler(handler)
 
 
 @pytest.fixture
@@ -392,8 +416,10 @@ def test_de_coverage_low_deducts_0_10_from_scores(tmp_db_path: str) -> None:
 # ============================================================================
 
 
-def test_all_checks_logged_to_agent_logs(tmp_db_path: str) -> None:
-    """Criterion 12: Every check result is logged to agent_logs with correct event_type."""
+def test_all_checks_logged_to_agent_logs(tmp_db_path: str, clean_logging: None) -> None:
+    """Criterion 12: Every check result is logged to agent_logs with correct event_type prefix."""
+    setup_logging(tmp_db_path)
+
     ohlcv_df = create_ohlcv_df({
         "RELIANCE": [datetime.date(2026, 3, 1), datetime.date(2026, 3, 2)],
     })
@@ -403,16 +429,16 @@ def test_all_checks_logged_to_agent_logs(tmp_db_path: str) -> None:
 
     conn = sqlite3.connect(tmp_db_path)
     cursor = conn.cursor()
-    cursor.execute("SELECT event_type, symbol FROM agent_logs ORDER BY id")
+    cursor.execute("SELECT action FROM agent_logs ORDER BY id")
     rows = cursor.fetchall()
     conn.close()
 
-    event_types = {row[0] for row in rows}
-    assert "roe_check" in event_types
-    assert "de_coverage_check" in event_types
-    assert "ohlcv_gap_check" in event_types
-    assert "stock_score" in event_types
-    assert "universe_score" in event_types
+    action_prefixes = {row[0].split(":")[0] for row in rows}
+    assert "roe_check" in action_prefixes
+    assert "de_coverage_check" in action_prefixes
+    assert "ohlcv_gap_check" in action_prefixes
+    assert "stock_score" in action_prefixes
+    assert "universe_score" in action_prefixes
 
 
 # ============================================================================
@@ -420,8 +446,10 @@ def test_all_checks_logged_to_agent_logs(tmp_db_path: str) -> None:
 # ============================================================================
 
 
-def test_timestamp_ist_timezone_aware(tmp_db_path: str) -> None:
-    """Criterion 13: timestamp_ist values are timezone-aware IST (contain +05:30)."""
+def test_timestamp_ist_timezone_aware(tmp_db_path: str, clean_logging: None) -> None:
+    """Criterion 13: logged_at values in agent_logs are IST (contain +05:30)."""
+    setup_logging(tmp_db_path)
+
     ohlcv_df = create_ohlcv_df({
         "RELIANCE": [datetime.date(2026, 3, 1), datetime.date(2026, 3, 2)],
     })
@@ -431,7 +459,7 @@ def test_timestamp_ist_timezone_aware(tmp_db_path: str) -> None:
 
     conn = sqlite3.connect(tmp_db_path)
     cursor = conn.cursor()
-    cursor.execute("SELECT timestamp_ist FROM agent_logs LIMIT 1")
+    cursor.execute("SELECT logged_at FROM agent_logs LIMIT 1")
     timestamp_str = cursor.fetchone()[0]
     conn.close()
 
@@ -506,8 +534,10 @@ def test_dataqualityreport_immutable(tmp_db_path: str) -> None:
 # ============================================================================
 
 
-def test_running_twice_appends_rows(tmp_db_path: str) -> None:
+def test_running_twice_appends_rows(tmp_db_path: str, clean_logging: None) -> None:
     """Criterion 17: Running validate_data twice on same db_path appends rows."""
+    setup_logging(tmp_db_path)
+
     ohlcv_df = create_ohlcv_df({
         "RELIANCE": [datetime.date(2026, 3, 1), datetime.date(2026, 3, 2)],
     })
@@ -714,8 +744,10 @@ def test_multiple_stocks_aggregate_score(tmp_db_path: str) -> None:
     assert report.universe_quality_score == pytest.approx(1.0)
 
 
-def test_json_serialization_in_logs(tmp_db_path: str) -> None:
-    """Test that check details are properly JSON-serialized in agent_logs."""
+def test_json_serialization_in_logs(tmp_db_path: str, clean_logging: None) -> None:
+    """Test that check details are properly JSON-serialized in the action column of agent_logs."""
+    setup_logging(tmp_db_path)
+
     ohlcv_df = create_ohlcv_df({
         "RELIANCE": [datetime.date(2026, 3, 1), datetime.date(2026, 3, 2)],
     })
@@ -725,12 +757,13 @@ def test_json_serialization_in_logs(tmp_db_path: str) -> None:
 
     conn = sqlite3.connect(tmp_db_path)
     cursor = conn.cursor()
-    cursor.execute("SELECT detail FROM agent_logs WHERE event_type = 'roe_check'")
-    detail_str = cursor.fetchone()[0]
+    cursor.execute("SELECT action FROM agent_logs WHERE action LIKE 'roe_check:%'")
+    action_str = cursor.fetchone()[0]
     conn.close()
 
-    # Should be valid JSON
-    detail_dict = json.loads(detail_str)
+    # action format is "roe_check: <json>"
+    json_part = action_str[len("roe_check: "):]
+    detail_dict = json.loads(json_part)
     assert "roe" in detail_dict
     assert "passed" in detail_dict
     assert "reason" in detail_dict
