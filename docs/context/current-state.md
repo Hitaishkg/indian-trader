@@ -12,7 +12,7 @@
 | src/utils/logger.py | ✅ Built | SQLite logging; StreamHandler + SQLiteHandler |
 | src/utils/notifier.py | ✅ Built | Telegram + Gmail notifications (both channels, always) |
 | src/execution/paper_trader.py | ✅ Built | Simulated CNC orders; orders/positions/trades tables; GTT simulation; WAL mode |
-| main.py | ⬜ Pending | Step 9: End-to-end dry-run pipeline |
+| main.py | 📝 Spec written, awaiting approval | Step 9: End-to-end dry-run pipeline. Spec: docs/specs/2026-03-24-main.md |
 
 ## Phase 2–6
 ⬜ Not started
