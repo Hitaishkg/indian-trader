@@ -19,7 +19,7 @@
 | Module | Status | Notes |
 |--------|--------|-------|
 | src/indicators/technical.py | ✅ Code review passed | Spec: docs/specs/2026-03-24-technical-indicators.md |
-| src/strategy/quality_filter.py | ⬜ Not started | |
+| src/strategy/quality_filter.py | 📝 Spec written, awaiting approval | Spec: docs/specs/2026-03-24-quality-filter.md |
 | src/strategy/momentum.py | ⬜ Not started | |
 | src/strategy/regime.py | ⬜ Not started | |
 | src/backtest/runner.py | ⬜ Not started | |
