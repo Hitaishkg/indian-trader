@@ -7,6 +7,13 @@
 
 ---
 
+## [2026-03-24] — src/indicators/technical.py
+
+**Built**: Pure pandas-ta indicator calculation module: RSI(14), MACD(12/26/9), Bollinger Bands(20,2.0), ATR(14 Wilder) per symbol, with per-symbol isolation via explicit for-loop and NaN-safe minimum lookback (26 rows).
+**Connects to**: Reads cleaned OHLCV DataFrame from cleaner.py; writes nothing; called by signal_agent.py (Phase 3) and main.py for position sizing.
+**Next step**: src/strategy/quality_filter.py — Phase 2 Step 2
+**Notes**: pandas 3.0 broke groupby.apply (drops key column); fixed by explicit for-loop over groups. Bollinger Bands column names vary by pandas-ta version; fixed by prefix matching. ATR uses Wilder smoothing via pandas-ta RMA (SMA init for first N periods, not pure ewm from start). Symbols with < 26 rows get all-NaN indicators (conservative, prevents unreliable values).
+
 ## [2026-03-24] — src/execution/paper_trader.py
 
 **Built**: CNC swing trade execution simulator with SQLite-backed orders, positions, trades tables and in-memory GTT simulation.

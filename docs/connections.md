@@ -156,6 +156,34 @@
 - Cache expiry default: 24 hours. Set cache_expiry_hours=0 to force fresh fetch.
 - Corrupt cache files are deleted and treated as cache miss (not an error)
 
+## src/indicators/technical.py
+
+**Purpose:** Pure calculation module computing RSI, MACD, Bollinger Bands, and ATR on cleaned OHLCV data using pandas-ta. Per-symbol isolation via explicit for-loop to avoid pandas 3.0 groupby.apply key column loss. Symbols with fewer than 26 rows (MINIMUM_LOOKBACK) return all-NaN indicators.
+
+**Public API**
+- `add_indicators(df: pd.DataFrame, rsi_period: int = 14, macd_fast: int = 12, macd_slow: int = 26, macd_signal: int = 9, bb_length: int = 20, bb_std: float = 2.0, atr_period: int = 14) -> pd.DataFrame` — appends 8 indicator columns (rsi, macd, macd_signal, macd_hist, bb_upper, bb_mid, bb_lower, atr) to a copy of input DataFrame; per-symbol via explicit for-loop; symbols with < 26 rows get all NaN
+- `compute_atr_series(df: pd.DataFrame, period: int = 14) -> pd.Series` — standalone Wilder-smoothed ATR for a single-symbol DataFrame; raises ValueError if high/low/close missing
+
+**Reads from**
+- Input DataFrame (memory): cleaned OHLCV from clean_ohlcv(); expected columns: symbol, date, open, high, low, close, volume
+
+**Writes to**
+- Nothing — pure in-memory calculation, no DB writes, no file writes, no network calls
+
+**Called by**
+- main.py: compute_atr_series() for position sizing calculations in Phase 1 dry-run
+- signal_agent.py (Phase 3): add_indicators() for technical signal generation in morning pipeline
+
+**Calls**
+- pandas-ta: ta.rsi(), ta.macd(), ta.bbands(), ta.atr()
+
+**Key constants / thresholds**
+- `MINIMUM_LOOKBACK = 26` — symbols with fewer rows get all-NaN indicators (equals MACD slow period); prevents unreliable indicator values on thin data
+- `RSI_PERIOD = 14`, `MACD_FAST = 12`, `MACD_SLOW = 26`, `MACD_SIGNAL_PERIOD = 9`
+- `BB_LENGTH = 20`, `BB_STD = 2.0`, `ATR_PERIOD = 14`
+- ATR uses Wilder smoothing via pandas-ta (RMA with ewm(com=period-1, adjust=False) and SMA initialisation for first N periods)
+- Bollinger Bands column naming varies by pandas-ta version; fixed via prefix matching (BBL_, BBM_, BBU_ prefixes)
+
 ## src/execution/paper_trader.py
 
 **Purpose:** Simulated CNC swing trade execution engine with SQLite-backed orders, positions, and trades tables; GTT stop-loss and take-profit simulation without any broker API calls.

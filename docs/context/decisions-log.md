@@ -1,5 +1,7 @@
 # Decisions Log — Fast Reference
 
+[2026-03-24] technical.py — pandas 3.0 groupby.apply drops key column; fixed by iterating groupby groups explicitly with for-loop
+[2026-03-24] technical.py — bbands column names vary by pandas-ta version (BBL_20_2.0 vs other formats); fixed by prefix matching (BBL_, BBM_, BBU_)
 [2026-03-24] paper_trader.py — update_stop_loss() added (not in original requirements) — needed for regime tightening (2× ATR → 1× ATR) and LLM sentiment tightening (confidence > 0.8 Negative); REGIME_TIGHTENED kept as own exit_reason distinct from MANUAL_EXIT (audit trail); caller provides prices (paper_trader is pure execution simulator only, not a price fetcher — same interface works for paper and live trading).
 
 [2026-03-22] validator.py — Module is mandatory first build in Phase 1. No mocks — validates real data. DataQualityError halts the pipeline if universe_quality_score < 0.6.
