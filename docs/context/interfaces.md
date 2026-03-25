@@ -50,6 +50,14 @@
 - `compute_atr_series(df: pd.DataFrame, period: int = 14) -> pd.Series` — standalone ATR (Wilder smoothing) for a single-symbol DataFrame; raises ValueError if high/low/close missing
 - Constants: `MINIMUM_LOOKBACK=26`, `RSI_PERIOD=14`, `MACD_FAST=12`, `MACD_SLOW=26`, `MACD_SIGNAL_PERIOD=9`, `BB_LENGTH=20`, `BB_STD=2.0`, `ATR_PERIOD=14`
 
+## src/strategy/momentum.py
+
+- `compute_momentum(quality_df: pd.DataFrame, ohlcv_df: pd.DataFrame, top_n: int = 5) -> tuple[pd.DataFrame, MomentumReport]` — computes 12-1 momentum scores for quality-filtered symbols; returns (ranked_df, report). Symbols with <252 rows excluded. Tiebreaker: within 2% relative diff → lower pct_from_52w_high wins.
+- `class MomentumReport` — frozen dataclass: scored_count, selected_count, insufficient_history_count, tiebreaker_applied_count, computed_at_ist
+- Constants: `TWELVE_MONTH_LOOKBACK=252`, `ONE_MONTH_LOOKBACK=21`, `DEFAULT_TOP_N=5`, `TIEBREAKER_THRESHOLD=0.02`, `AGENT_NAME="momentum"`
+- Output DataFrame columns (sorted by rank asc): symbol, momentum_score, twelve_month_return, one_month_return, rank (int64), pct_from_52w_high, within_30pct_of_52w_high
+- Raises ValueError on: empty inputs, missing required columns, top_n < 1
+
 ## src/strategy/quality_filter.py
 
 - `apply_quality_filter(fundamentals_df: pd.DataFrame, ohlcv_df: pd.DataFrame, lookback_days: int = 252) -> tuple[pd.DataFrame, FilterReport]` — applies all 5 hard quality filters (ROE, D/E, EPS, volume, price) to fundamentals_df × ohlcv_df; returns (filtered_df, report); raises ValueError on empty inputs or missing required columns

@@ -7,6 +7,13 @@
 
 ---
 
+## [2026-03-25] — src/strategy/momentum.py
+
+**Built**: 12-1 momentum factor scoring with top-N selection and 2% adjacent-pair tiebreaker (lower pct_from_52w_high wins).
+**Connects to**: Reads quality_df + ohlcv_df in memory; writes nothing; passes ranked_df to regime.py.
+**Next step**: src/strategy/regime.py — Phase 2 Step 4
+**Notes**: Tiebreaker is single-pass (not full re-sort). Tests required close[-21]=close[-1] to zero out 1m return and isolate 12m return for readable score values.
+
 ## [2026-03-25] — src/strategy/quality_filter.py
 
 **Built**: Five hard quality filters (ROE, D/E, EPS, volume, price) with FilterReport dataclass and thin_universe detection.

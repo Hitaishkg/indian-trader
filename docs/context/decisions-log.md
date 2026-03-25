@@ -1,5 +1,7 @@
 # Decisions Log — Fast Reference
 
+[2026-03-25] momentum.py — tiebreaker is a single adjacent-pair pass (not a full re-sort); only swaps if rel_diff < 2%; lower pct_from_52w_high wins (closer to 52w high)
+[2026-03-25] momentum.py — test_tiebreaker and test_negative_scores required close[-21]=close[-1] to zero out 1m return; otherwise 12m and 1m returns cancel and score=0
 [2026-03-25] quality_filter.py — stale/failed fundamentals auto-fail all 5 filters before column checks to prevent trading on corrupt data
 [2026-03-25] quality_filter.py — all 5 filters always evaluated (no short-circuit) to produce accurate filter_failure_counts for audit trail
 [2026-03-24] technical.py — pandas 3.0 groupby.apply drops key column; fixed by iterating groupby groups explicitly with for-loop

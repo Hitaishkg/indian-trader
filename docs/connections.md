@@ -184,6 +184,36 @@
 - ATR uses Wilder smoothing via pandas-ta (RMA with ewm(com=period-1, adjust=False) and SMA initialisation for first N periods)
 - Bollinger Bands column naming varies by pandas-ta version; fixed via prefix matching (BBL_, BBM_, BBU_ prefixes)
 
+## src/strategy/momentum.py
+
+**Purpose:** Computes the 12-1 momentum factor (12-month total return minus 1-month total return) for quality-filtered symbols and selects the top N weekly candidates. Applies a 2% adjacent-pair tiebreaker using 52-week high proximity.
+
+**Public API:**
+- `compute_momentum(quality_df, ohlcv_df, top_n=5) -> tuple[pd.DataFrame, MomentumReport]` — scores all quality-filtered symbols; returns ranked_df (top N) and MomentumReport
+- `class MomentumReport` (frozen dataclass) — scored_count, selected_count, insufficient_history_count, tiebreaker_applied_count, computed_at_ist
+
+**Reads from**
+- quality_df (memory): symbol, pct_from_52w_high, within_30pct_of_52w_high — from apply_quality_filter()
+- ohlcv_df (memory): symbol, date, close — full OHLCV history from fetch_ohlcv()
+
+**Writes to**
+- Nothing — pure calculation. Only agent_logs via log_agent_action().
+
+**Called by**
+- screener_agent.py (Phase 3): weekly Monday run
+- backtest/runner.py (Phase 2): historical backtest
+- main.py: dry-run pipeline
+
+**Calls**
+- src/utils/logger.py: log_agent_action()
+
+**Key constants / thresholds**
+- `TWELVE_MONTH_LOOKBACK = 252` — trading days for 12-month return
+- `ONE_MONTH_LOOKBACK = 21` — trading days for 1-month return
+- `DEFAULT_TOP_N = 5` — number of candidates to select
+- `TIEBREAKER_THRESHOLD = 0.02` — 2% relative diff triggers tiebreaker
+- Symbols with <252 rows are excluded and logged as insufficient_history
+
 ## src/strategy/quality_filter.py
 
 **Purpose:** Quality filter applying five hard filters to stock universe. All filters must pass; failure on any one disqualifies the stock entirely. Detects thin universes (fewer than 3 passing stocks) and returns empty DataFrame.
