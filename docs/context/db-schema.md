@@ -69,6 +69,37 @@ Note: src/data/validator.py also writes to agent_logs directly (legacy schema, P
 
 ---
 
+## Phase 2 Tables (written by src/data/fundamentals.py — historical additions)
+
+### fundamentals_history (written by: fetch_historical_fundamentals())
+| Column | Type | Notes |
+|--------|------|-------|
+| id | INTEGER PRIMARY KEY AUTOINCREMENT | Auto-incrementing row ID |
+| symbol | TEXT NOT NULL | NSE ticker symbol |
+| fiscal_year | INTEGER NOT NULL | Indian fiscal year (e.g. 2020 = FY2020 = Apr 2019 - Mar 2020) |
+| roe | REAL | Return on equity as decimal (0.20 = 20%); NULL if not extractable |
+| debt_to_equity | REAL | D/E ratio; NULL if not extractable |
+| eps_positive | INTEGER | 1 if annual EPS > 0, 0 if <= 0, NULL if not extractable. NOTE: annual approximation of quarterly check |
+| data_source | TEXT NOT NULL | "screener", "yfinance_fallback", or "failed" |
+| data_quality | TEXT NOT NULL | "clean", "degraded", or "failed" |
+| fetched_at_ist | TEXT NOT NULL | ISO 8601 IST timestamp of when row was fetched |
+
+UNIQUE constraint on (symbol, fiscal_year). Upsert via INSERT OR REPLACE.
+Staleness: rows older than 45 days (fetched_at_ist) are refreshed on next fetch.
+
+### nifty_constituents (written by: _populate_nifty_constituents())
+| Column | Type | Notes |
+|--------|------|-------|
+| id | INTEGER PRIMARY KEY AUTOINCREMENT | Auto-incrementing row ID |
+| symbol | TEXT NOT NULL | NSE ticker symbol |
+| year | INTEGER NOT NULL | Calendar year (2010-2023) |
+| in_index | INTEGER NOT NULL | 1 if stock was in Nifty 50 that year, 0 otherwise |
+
+UNIQUE constraint on (symbol, year). Populated once from hardcoded list via INSERT OR IGNORE.
+Lazy-initialized on first call to get_nifty_universe_for_year().
+
+---
+
 ## Future Tables (written by Trading Layer agents — not yet built)
 
 ### market_data (written by: Data Collector Agent — Phase 4, step 1)

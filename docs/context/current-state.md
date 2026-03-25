@@ -22,6 +22,7 @@
 | src/strategy/quality_filter.py | ✅ Code review passed | Spec: docs/specs/2026-03-24-quality-filter.md |
 | src/strategy/momentum.py | ✅ Code review passed | Spec: docs/specs/2026-03-25-momentum.md |
 | src/strategy/regime.py | ✅ Code review passed | Spec: docs/specs/2026-03-25-regime.md |
+| src/data/fundamentals.py (historical additions) | 📝 Spec written, additions pending | Spec: docs/specs/2026-03-25-historical-fundamentals.md |
 | src/backtest/runner.py | 📝 Spec written, awaiting approval | Spec: docs/specs/2026-03-25-backtest-runner.md |
 | src/backtest/validator.py | ⬜ Not started | |
 
