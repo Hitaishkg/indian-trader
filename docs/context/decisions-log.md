@@ -1,5 +1,8 @@
 # Decisions Log — Fast Reference
-
+[2026-03-25] regime.py — pure computation module; does NOT call update_stop_loss(); only returns stop_tighten_symbols; caller executes stop updates
+[2026-03-25] regime.py — nifty_ohlcv_df requires only date+close (no symbol); use fetch_sector_indices() not fetch_ohlcv() to get Nifty 50 data (confirmed 270 rows available)
+[2026-03-25] regime.py — close == 200 SMA → ABOVE_200DMA (uses >=); avoids unnecessary position reduction at boundary
+[2026-03-25] fetcher.py- fetcher cache validates file age only, not date range coverage.Workaround: use cache_expiry_hours=0 when longer history needed.Fix planned for Phase 3/4 cache layer.
 [2026-03-25] momentum.py — tiebreaker is a single adjacent-pair pass (not a full re-sort); only swaps if rel_diff < 2%; lower pct_from_52w_high wins (closer to 52w high)
 [2026-03-25] momentum.py — test_tiebreaker and test_negative_scores required close[-21]=close[-1] to zero out 1m return; otherwise 12m and 1m returns cancel and score=0
 [2026-03-25] quality_filter.py — stale/failed fundamentals auto-fail all 5 filters before column checks to prevent trading on corrupt data

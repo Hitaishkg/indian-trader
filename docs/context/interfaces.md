@@ -50,6 +50,16 @@
 - `compute_atr_series(df: pd.DataFrame, period: int = 14) -> pd.Series` — standalone ATR (Wilder smoothing) for a single-symbol DataFrame; raises ValueError if high/low/close missing
 - Constants: `MINIMUM_LOOKBACK=26`, `RSI_PERIOD=14`, `MACD_FAST=12`, `MACD_SLOW=26`, `MACD_SIGNAL_PERIOD=9`, `BB_LENGTH=20`, `BB_STD=2.0`, `ATR_PERIOD=14`
 
+## src/strategy/regime.py
+
+- `apply_regime_filter(ranked_df: pd.DataFrame, nifty_ohlcv_df: pd.DataFrame, open_positions: list[dict[str, object]] | None = None) -> tuple[pd.DataFrame, RegimeResult]` — determines market regime from Nifty 50 200 DMA; returns (filtered_df with position_size_multiplier added, RegimeResult); empty filtered_df when BELOW_200DMA_10DAYS
+- `class RegimeResult` — frozen dataclass: regime (str), nifty_close, sma_200, consecutive_days_below (int), position_size_multiplier (float), tighten_stops (bool), stop_tighten_symbols (list[str]), computed_at_ist (str)
+- `compute_200dma(nifty_ohlcv_df: pd.DataFrame) -> float` — 200-day SMA of Nifty 50 close; raises ValueError if <200 rows
+- `count_consecutive_days_below_200dma(nifty_ohlcv_df: pd.DataFrame) -> int` — counts consecutive days (from most recent) close < rolling 200 SMA; returns 0 if above
+- Constants: `SMA_PERIOD=200`, `BELOW_DMA_BLOCK_DAYS=10`, `POSITION_SIZE_ABOVE=1.0`, `POSITION_SIZE_BELOW=0.5`, `POSITION_SIZE_BLOCKED=0.0`, `AGENT_NAME="regime"`
+- nifty_ohlcv_df requires only "date" and "close" (no symbol column); ranked_df requires all 7 momentum.py output columns
+- Raises ValueError on missing columns or <200 nifty rows; empty ranked_df is valid (not an error)
+
 ## src/strategy/momentum.py
 
 - `compute_momentum(quality_df: pd.DataFrame, ohlcv_df: pd.DataFrame, top_n: int = 5) -> tuple[pd.DataFrame, MomentumReport]` — computes 12-1 momentum scores for quality-filtered symbols; returns (ranked_df, report). Symbols with <252 rows excluded. Tiebreaker: within 2% relative diff → lower pct_from_52w_high wins.

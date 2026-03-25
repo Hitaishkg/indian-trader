@@ -184,6 +184,39 @@
 - ATR uses Wilder smoothing via pandas-ta (RMA with ewm(com=period-1, adjust=False) and SMA initialisation for first N periods)
 - Bollinger Bands column naming varies by pandas-ta version; fixed via prefix matching (BBL_, BBM_, BBU_ prefixes)
 
+## src/strategy/regime.py
+
+**Purpose:** Nifty 50 200-day SMA regime filter. Determines market regime, adjusts position sizing for new trades, and signals which open positions need stop-loss tightening. Final strategy filter before backtest integration.
+
+**Public API:**
+- `apply_regime_filter(ranked_df, nifty_ohlcv_df, open_positions=None) -> tuple[pd.DataFrame, RegimeResult]`
+- `class RegimeResult` (frozen dataclass) — regime, nifty_close, sma_200, consecutive_days_below, position_size_multiplier, tighten_stops, stop_tighten_symbols, computed_at_ist
+- `compute_200dma(nifty_ohlcv_df) -> float`
+- `count_consecutive_days_below_200dma(nifty_ohlcv_df) -> int`
+
+**Reads from**
+- ranked_df (memory): from compute_momentum()
+- nifty_ohlcv_df (memory): date + close columns — get via fetch_sector_indices() filtering NIFTY_50
+- open_positions (memory): list of dicts from PaperTrader.get_positions()
+
+**Writes to**
+- Nothing — pure computation. Only agent_logs via log_agent_action().
+
+**Called by**
+- backtest/runner.py (Phase 2)
+- screener_agent.py (Phase 3)
+- main.py: dry-run pipeline
+
+**Calls**
+- src/utils/logger.py: log_agent_action()
+
+**Key constants / thresholds**
+- `SMA_PERIOD = 200` — 200-day SMA window
+- `BELOW_DMA_BLOCK_DAYS = 10` — 10+ consecutive days below → no new positions
+- Multipliers: ABOVE=1.0, BELOW=0.5, BLOCKED=0.0
+- Boundary: close == SMA → ABOVE_200DMA (>= comparison)
+- Does NOT call PaperTrader.update_stop_loss() — caller handles stop execution
+
 ## src/strategy/momentum.py
 
 **Purpose:** Computes the 12-1 momentum factor (12-month total return minus 1-month total return) for quality-filtered symbols and selects the top N weekly candidates. Applies a 2% adjacent-pair tiebreaker using 52-week high proximity.

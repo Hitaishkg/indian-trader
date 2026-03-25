@@ -21,7 +21,7 @@
 | src/indicators/technical.py | ✅ Code review passed | Spec: docs/specs/2026-03-24-technical-indicators.md |
 | src/strategy/quality_filter.py | ✅ Code review passed | Spec: docs/specs/2026-03-24-quality-filter.md |
 | src/strategy/momentum.py | ✅ Code review passed | Spec: docs/specs/2026-03-25-momentum.md |
-| src/strategy/regime.py | 📝 Spec written, awaiting approval | Spec: docs/specs/2026-03-25-regime.md |
+| src/strategy/regime.py | ✅ Code review passed | Spec: docs/specs/2026-03-25-regime.md |
 | src/backtest/runner.py | ⬜ Not started | |
 | src/backtest/validator.py | ⬜ Not started | |
 
@@ -29,4 +29,4 @@
 ⬜ Not started
 
 ## Next Action
-Build **src/strategy/regime.py** (Phase 2, step 4 of 6) — Nifty 50 200 DMA filter with open position tightening.
+Build **src/backtest/runner.py** (Phase 2, step 5 of 6) — backtesting.py wrapper for strategy validation over 2010–2023 historical data.

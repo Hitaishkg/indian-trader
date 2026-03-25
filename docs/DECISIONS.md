@@ -7,6 +7,13 @@
 
 ---
 
+## [2026-03-25] — src/strategy/regime.py
+
+**Built**: Nifty 50 200 DMA regime filter with three regimes, position size multipliers, and stop-loss tightening signals.
+**Connects to**: Reads ranked_df + nifty_ohlcv_df + open_positions in memory; writes nothing; passes filtered_df to backtest/runner.py.
+**Next step**: src/backtest/runner.py — Phase 2 Step 5
+**Notes**: Pure computation — does NOT execute stop updates. Use fetch_sector_indices() for Nifty data (not fetch_ohlcv). close==SMA → ABOVE_200DMA. Integration confirmed: momentum test passed on real NSE data (6 stocks scored, top 5 selected).
+
 ## [2026-03-25] — src/strategy/momentum.py
 
 **Built**: 12-1 momentum factor scoring with top-N selection and 2% adjacent-pair tiebreaker (lower pct_from_52w_high wins).
