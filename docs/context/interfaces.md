@@ -50,6 +50,13 @@
 - `compute_atr_series(df: pd.DataFrame, period: int = 14) -> pd.Series` — standalone ATR (Wilder smoothing) for a single-symbol DataFrame; raises ValueError if high/low/close missing
 - Constants: `MINIMUM_LOOKBACK=26`, `RSI_PERIOD=14`, `MACD_FAST=12`, `MACD_SLOW=26`, `MACD_SIGNAL_PERIOD=9`, `BB_LENGTH=20`, `BB_STD=2.0`, `ATR_PERIOD=14`
 
+## src/strategy/quality_filter.py
+
+- `apply_quality_filter(fundamentals_df: pd.DataFrame, ohlcv_df: pd.DataFrame, lookback_days: int = 252) -> tuple[pd.DataFrame, FilterReport]` — applies all 5 hard quality filters (ROE, D/E, EPS, volume, price) to fundamentals_df × ohlcv_df; returns (filtered_df, report); raises ValueError on empty inputs or missing required columns
+- `class FilterReport` — frozen dataclass: universe_size, passed_count, failed_count, thin_universe, filter_failure_counts (dict[str, int] keyed "roe"/"debt_equity"/"eps"/"volume"/"price"), filtered_at_ist
+- Constants: `ROE_THRESHOLD=0.15`, `DE_THRESHOLD=1.0`, `VOLUME_VALUE_THRESHOLD=20_000_000.0`, `PRICE_THRESHOLD=50.0`, `PROXIMITY_THRESHOLD=0.30`, `DEFAULT_LOOKBACK_DAYS=252`, `MIN_UNIVERSE_SIZE=3`, `AGENT_NAME="quality_filter"`
+- Output DataFrame columns (passing symbols only): symbol, roe, debt_to_equity, avg_daily_value, latest_price, high_52w, pct_from_52w_high, within_30pct_of_52w_high, passed_hard_filters; empty DataFrame with same schema returned when thin_universe
+
 ## src/execution/paper_trader.py
 
 - `class PaperTrader` — simulated CNC swing trade execution engine; raises ValueError on construction if settings.live_trading is True
