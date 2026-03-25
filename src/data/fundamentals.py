@@ -1319,14 +1319,21 @@ def _scrape_screener_historical(
     soup = BeautifulSoup(html_text, "html.parser")
 
     # ----------------------------------------------------------------
-    # Extract year headers from Key Ratios section ("Mar YYYY")
+    # Extract year headers from Ratios section ("Mar YYYY")
+    # NOTE: Screener.in Ratios section shows ROCE per year, NOT ROE.
+    # ROE is only available as aggregate ranges (3yr/5yr/10yr average).
+    # ROE is computed below from: Net Profit / (Equity Capital + Reserves)
     # ----------------------------------------------------------------
     fiscal_years: list[int] = []
-    roe_by_year: dict[int, float | None] = {}
     de_by_year: dict[int, float | None] = {}
     eps_by_year: dict[int, int | None] = {}
+    net_profit_by_year: dict[int, float | None] = {}
 
-    # --- ROE from Key Ratios section ---
+    # Top-level dicts for ROE computation (populated in Balance Sheet section loop)
+    equity_capital_by_year: dict[int, float | None] = {}
+    reserves_by_year: dict[int, float | None] = {}
+
+    # Extract year headers from the Ratios section (for reference only)
     for section in soup.find_all("section"):
         heading = section.find(["h2", "h3"])
         if heading is None:
@@ -1337,14 +1344,11 @@ def _scrape_screener_historical(
         table = section.find("table")
         if table is None:
             break
-
         rows_in_table = table.find_all("tr")
         if not rows_in_table:
             break
-
-        # First row: year headers — cells contain "Mar YYYY"
         header_cells = rows_in_table[0].find_all(["th", "td"])
-        for cell in header_cells[1:]:  # skip first label cell
+        for cell in header_cells[1:]:
             raw = cell.get_text(strip=True)
             try:
                 if "Mar" in raw or "Sep" in raw or len(raw) == 4:
@@ -1352,24 +1356,6 @@ def _scrape_screener_historical(
                     fiscal_years.append(int(year_str))
             except (ValueError, IndexError):
                 continue
-
-        # Find ROE row
-        for row in rows_in_table[1:]:
-            cells = row.find_all(["th", "td"])
-            if not cells:
-                continue
-            label = cells[0].get_text(strip=True)
-            if "Return on equity" in label or "Return on Equity" in label or label.strip() == "ROE":
-                for idx, cell in enumerate(cells[1:len(fiscal_years) + 1]):
-                    raw_val = cell.get_text(strip=True).replace(",", "").replace("%", "").strip()
-                    if raw_val and raw_val != "--":
-                        try:
-                            roe_by_year[fiscal_years[idx]] = float(raw_val) / 100.0
-                        except ValueError:
-                            roe_by_year[fiscal_years[idx]] = None
-                    else:
-                        roe_by_year[fiscal_years[idx]] = None
-                break
         break
 
     # --- D/E from Balance Sheet section ---
@@ -1403,8 +1389,6 @@ def _scrape_screener_historical(
         if not bs_years:
             bs_years = fiscal_years
 
-        equity_capital_by_year: dict[int, float | None] = {}
-        reserves_by_year: dict[int, float | None] = {}
         borrowings_by_year: dict[int, float | None] = {}
 
         for row in rows_in_table[1:]:
@@ -1483,7 +1467,7 @@ def _scrape_screener_historical(
             cells = row.find_all(["th", "td"])
             if not cells:
                 continue
-            label = cells[0].get_text(strip=True)
+            label = cells[0].get_text(strip=True).rstrip("+")
             if label in ("EPS in Rs", "EPS"):
                 for idx, cell in enumerate(cells[1:len(pl_years) + 1]):
                     if idx >= len(pl_years):
@@ -1497,13 +1481,44 @@ def _scrape_screener_historical(
                             eps_by_year[pl_years[idx]] = None
                     else:
                         eps_by_year[pl_years[idx]] = None
-                break
+            elif label == "Net Profit":
+                # Needed to compute per-year ROE = Net Profit / (Equity + Reserves)
+                for idx, cell in enumerate(cells[1:len(pl_years) + 1]):
+                    if idx >= len(pl_years):
+                        break
+                    raw_val = cell.get_text(strip=True).replace(",", "").strip()
+                    if raw_val and raw_val != "--":
+                        try:
+                            net_profit_by_year[pl_years[idx]] = float(raw_val)
+                        except ValueError:
+                            net_profit_by_year[pl_years[idx]] = None
+                    else:
+                        net_profit_by_year[pl_years[idx]] = None
         break
+
+    # ----------------------------------------------------------------
+    # Compute ROE per year = Net Profit / (Equity Capital + Reserves)
+    # Screener.in has no per-year ROE column — must be derived.
+    # equity_capital_by_year and reserves_by_year populated in Balance Sheet loop above.
+    # ----------------------------------------------------------------
+    roe_by_year: dict[int, float | None] = {}
+    for year in net_profit_by_year:
+        net_profit = net_profit_by_year.get(year)
+        ec = equity_capital_by_year.get(year)
+        res = reserves_by_year.get(year)
+        if net_profit is not None and ec is not None and res is not None:
+            equity_total = ec + res
+            if equity_total > 0:
+                roe_by_year[year] = net_profit / equity_total
+            else:
+                roe_by_year[year] = None
+        else:
+            roe_by_year[year] = None
 
     # ----------------------------------------------------------------
     # Merge all years into a single result dict
     # ----------------------------------------------------------------
-    all_years = set(fiscal_years) | set(de_by_year.keys()) | set(eps_by_year.keys())
+    all_years = set(fiscal_years) | set(de_by_year.keys()) | set(eps_by_year.keys()) | set(roe_by_year.keys())
 
     if not all_years:
         logger.warning("No year columns found in Screener.in for %s", symbol)
