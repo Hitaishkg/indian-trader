@@ -7,6 +7,13 @@
 
 ---
 
+## [2026-03-25] — src/strategy/quality_filter.py
+
+**Built**: Five hard quality filters (ROE, D/E, EPS, volume, price) with FilterReport dataclass and thin_universe detection.
+**Connects to**: Reads fundamentals_df + ohlcv_df; writes nothing; called by screener_agent.py and backtest/runner.py.
+**Next step**: src/strategy/momentum.py — Phase 2 Step 3
+**Notes**: Stale fundamentals auto-fail all filters. No short-circuit evaluation (accurate failure counts). pct_from_52w_high passed downstream for momentum tiebreaker.
+
 ## [2026-03-24] — src/indicators/technical.py
 
 **Built**: Pure pandas-ta indicator calculation module: RSI(14), MACD(12/26/9), Bollinger Bands(20,2.0), ATR(14 Wilder) per symbol, with per-symbol isolation via explicit for-loop and NaN-safe minimum lookback (26 rows).

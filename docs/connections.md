@@ -184,6 +184,37 @@
 - ATR uses Wilder smoothing via pandas-ta (RMA with ewm(com=period-1, adjust=False) and SMA initialisation for first N periods)
 - Bollinger Bands column naming varies by pandas-ta version; fixed via prefix matching (BBL_, BBM_, BBU_ prefixes)
 
+## src/strategy/quality_filter.py
+
+**Purpose:** Quality filter applying five hard filters to stock universe. All filters must pass; failure on any one disqualifies the stock entirely. Detects thin universes (fewer than 3 passing stocks) and returns empty DataFrame.
+
+**Public API**
+- `apply_quality_filter(fundamentals_df, ohlcv_df, lookback_days=252) -> tuple[pd.DataFrame, FilterReport]` — filters universe to stocks passing all 5 hard filters; returns passing stocks DataFrame + FilterReport
+- `class FilterReport` (frozen dataclass) — universe_size, passed_count, failed_count, thin_universe (bool), filter_failure_counts (dict), filtered_at_ist (str)
+
+**Reads from**
+- fundamentals_df (memory): symbol, roe, debt_to_equity, eps_positive_4q, data_quality — from fetch_fundamentals()
+- ohlcv_df (memory): symbol, date, close, volume — from fetch_ohlcv() / clean_ohlcv()
+
+**Writes to**
+- Nothing — pure calculation. Only agent_logs via log_agent_action().
+
+**Called by**
+- screener_agent.py (Phase 3): weekly Monday run
+- backtest/runner.py (Phase 2): historical backtest
+- main.py: dry-run pipeline
+
+**Calls**
+- src/utils/logger.py: log_agent_action()
+
+**Key constants / thresholds**
+- `ROE_THRESHOLD = 0.15` — ROE must exceed 15%
+- `DE_THRESHOLD = 1.0` — Debt/equity must be below 1.0
+- `VOLUME_VALUE_THRESHOLD = 20_000_000` — avg daily traded value > ₹20 crore
+- `PRICE_THRESHOLD = 50.0` — latest close must exceed ₹50
+- `PROXIMITY_THRESHOLD = 0.30` — soft: within 30% of 52-week high (never eliminates)
+- `MIN_UNIVERSE_SIZE = 3` — fewer than 3 passing → thin_universe=True, return empty DataFrame
+
 ## src/execution/paper_trader.py
 
 **Purpose:** Simulated CNC swing trade execution engine with SQLite-backed orders, positions, and trades tables; GTT stop-loss and take-profit simulation without any broker API calls.
