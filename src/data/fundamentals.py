@@ -1650,18 +1650,29 @@ def get_nifty_universe_for_year(year: int) -> list[str]:
     """Return NSE ticker symbols that were in the Nifty 50 for the given calendar year.
 
     Lazily initialises the nifty_constituents table on first call.
-    Returns an empty list if the year is outside 2010-2023 — no error raised.
+    Returns an empty list if the year is before 2010 — no error raised.
+    For years beyond HISTORICAL_END_YEAR (2023), returns the 2023 universe as
+    the best available approximation and logs a warning.
 
     Args:
-        year: Calendar year (e.g. 2015). Returns empty list if outside 2010-2023.
+        year: Calendar year (e.g. 2015).
 
     Returns:
         List of NSE ticker symbols sorted alphabetically. Empty list if year
-        is out of range or no constituents found.
+        is before 2010.
 
     Raises:
         FundamentalsError: If SQLite operations fail.
     """
+    query_year = year
+    if year > HISTORICAL_END_YEAR:
+        logger.warning(
+            "get_nifty_universe_for_year: year %d is beyond hardcoded range "
+            "(max %d). Returning %d universe as best available approximation.",
+            year, HISTORICAL_END_YEAR, HISTORICAL_END_YEAR,
+        )
+        query_year = HISTORICAL_END_YEAR
+
     db_path = settings.database_url.replace("sqlite:///", "")
     conn = _init_historical_tables(db_path)
 
@@ -1686,11 +1697,11 @@ def get_nifty_universe_for_year(year: int) -> list[str]:
                 WHERE year = ? AND in_index = 1
                 ORDER BY symbol
                 """,
-                (year,),
+                (query_year,),
             ).fetchall()
         except sqlite3.Error as exc:
             raise FundamentalsError(
-                f"DB read failed for nifty_constituents year={year}: {exc}"
+                f"DB read failed for nifty_constituents year={query_year}: {exc}"
             ) from exc
 
         return [row[0] for row in rows_db]
