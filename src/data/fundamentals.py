@@ -12,11 +12,13 @@ Section 5.2 contract. Consumed by validator.py, quality_filter.py, and main.py.
 
 from __future__ import annotations
 
+import datetime
 import json
 import logging
 import math
 import os
 import random
+import sqlite3
 import time
 from dataclasses import dataclass
 from zoneinfo import ZoneInfo
@@ -27,6 +29,17 @@ import yfinance as yf
 from bs4 import BeautifulSoup
 
 from src.config.settings import settings
+
+
+# ---------------------------------------------------------------------------
+# Module-level exception
+# ---------------------------------------------------------------------------
+
+
+class FundamentalsError(Exception):
+    """Raised when fundamentals data fetch or DB operation fails."""
+
+    pass
 
 # ---------------------------------------------------------------------------
 # Logger setup
@@ -74,6 +87,85 @@ DE_NORMALISATION_THRESHOLD: float = 10.0  # yfinance D/E values above this are d
 AGENT_NAME: str = "fundamentals"  # for future agent_logs integration
 
 _IST = ZoneInfo("Asia/Kolkata")
+
+# ---------------------------------------------------------------------------
+# Historical fundamentals constants
+# ---------------------------------------------------------------------------
+
+# Fiscal year safe-publish cutoff: Indian FY results reliably available from July
+FISCAL_YEAR_SAFE_MONTH: int = 7  # July — FY results safely published by this month
+
+# Historical data range for backtest
+HISTORICAL_START_YEAR: int = 2010
+HISTORICAL_END_YEAR: int = 2023
+
+# Nifty 50 constituents by symbol: maps symbol -> list of calendar years present in index
+# Compiled from NSE semi-annual reconstitution records (2010-2023).
+# Represents the "stable core" — stocks present >= 80% of the 14-year backtest period,
+# plus early-era stocks included to ensure adequate universe size pre-2015.
+NIFTY_CONSTITUENTS_BY_SYMBOL: dict[str, list[int]] = {
+    "RELIANCE": list(range(2010, 2024)),
+    "TCS": list(range(2010, 2024)),
+    "HDFCBANK": list(range(2010, 2024)),
+    "INFY": list(range(2010, 2024)),
+    "ICICIBANK": list(range(2010, 2024)),
+    "HINDUNILVR": list(range(2010, 2024)),
+    "ITC": list(range(2010, 2024)),
+    "SBIN": list(range(2010, 2024)),
+    "BHARTIARTL": list(range(2010, 2024)),
+    "KOTAKBANK": list(range(2011, 2024)),
+    "LT": list(range(2010, 2024)),
+    "AXISBANK": list(range(2010, 2024)),
+    "ASIANPAINT": list(range(2012, 2024)),
+    "MARUTI": list(range(2010, 2024)),
+    "HCLTECH": list(range(2010, 2024)),
+    "SUNPHARMA": list(range(2010, 2024)),
+    "TITAN": list(range(2012, 2024)),
+    "BAJFINANCE": list(range(2014, 2024)),
+    "WIPRO": list(range(2010, 2024)),
+    "ULTRACEMCO": list(range(2010, 2024)),
+    "NESTLEIND": list(range(2013, 2024)),
+    "TATAMOTORS": list(range(2010, 2024)),
+    "POWERGRID": list(range(2010, 2024)),
+    "NTPC": list(range(2010, 2024)),
+    "M&M": list(range(2010, 2024)),
+    "TATASTEEL": list(range(2010, 2024)),
+    "TECHM": list(range(2013, 2024)),
+    "ONGC": list(range(2010, 2024)),
+    "HDFCLIFE": list(range(2019, 2024)),
+    "BAJAJFINSV": list(range(2015, 2024)),
+    "JSWSTEEL": list(range(2010, 2024)),
+    "INDUSINDBK": list(range(2013, 2024)),
+    "GRASIM": list(range(2010, 2024)),
+    "CIPLA": list(range(2010, 2024)),
+    "DRREDDY": list(range(2010, 2024)),
+    "BPCL": list(range(2010, 2024)),
+    "COALINDIA": list(range(2011, 2024)),
+    "HEROMOTOCO": list(range(2010, 2024)),
+    "EICHERMOT": list(range(2016, 2024)),
+    "DIVISLAB": list(range(2020, 2024)),
+    "BRITANNIA": list(range(2016, 2024)),
+    "HINDALCO": list(range(2010, 2024)),
+    "ADANIPORTS": list(range(2013, 2024)),
+    "TATACONSUM": list(range(2020, 2024)),
+    "SBILIFE": list(range(2020, 2024)),
+    "APOLLOHOSP": list(range(2021, 2024)),
+    "UPL": list(range(2014, 2024)),
+    "SAIL": list(range(2010, 2015)),
+    "VEDL": list(range(2013, 2018)),
+    "DLF": list(range(2010, 2014)),
+    "JINDALSTEL": list(range(2010, 2015)),
+    "BANKBARODA": list(range(2010, 2016)),
+    "PNB": list(range(2010, 2014)),
+    "BHEL": list(range(2010, 2016)),
+    "ACC": list(range(2010, 2014)),
+    "AMBUJACEM": list(range(2010, 2014)),
+    "LUPIN": list(range(2014, 2020)),
+    "YESBANK": list(range(2014, 2020)),
+    "ZEEL": list(range(2014, 2020)),
+    "GAIL": list(range(2010, 2024)),
+    "IOC": list(range(2012, 2021)),
+}
 
 
 # ---------------------------------------------------------------------------
@@ -858,3 +950,735 @@ def get_cache_age_days(symbol: str) -> float | None:
     if not os.path.exists(cache_path):
         return None
     return (time.time() - os.path.getmtime(cache_path)) / 86400
+
+
+# ---------------------------------------------------------------------------
+# Historical fundamentals — SQLite-backed functions (Phase 2 additions)
+# ---------------------------------------------------------------------------
+
+
+def _init_historical_tables(db_path: str) -> sqlite3.Connection:
+    """Create historical fundamentals tables and return an open WAL connection.
+
+    Creates fundamentals_history and nifty_constituents tables if they do not
+    already exist. Applies WAL pragmas matching the paper_trader.py pattern.
+    The caller is responsible for closing the connection (use a finally block).
+
+    Args:
+        db_path: Absolute path to the SQLite database file.
+
+    Returns:
+        Open sqlite3.Connection with WAL mode applied.
+
+    Raises:
+        FundamentalsError: If the SQLite connection or table creation fails.
+    """
+    try:
+        conn = sqlite3.connect(db_path)
+        conn.execute("PRAGMA journal_mode=WAL;")
+        conn.execute("PRAGMA busy_timeout=30000;")
+        conn.execute("PRAGMA cache_size=-64000;")
+        conn.execute("PRAGMA synchronous=NORMAL;")
+
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS fundamentals_history (
+                id             INTEGER PRIMARY KEY AUTOINCREMENT,
+                symbol         TEXT NOT NULL,
+                fiscal_year    INTEGER NOT NULL,
+                roe            REAL,
+                debt_to_equity REAL,
+                eps_positive   INTEGER,
+                data_source    TEXT NOT NULL,
+                data_quality   TEXT NOT NULL,
+                fetched_at_ist TEXT NOT NULL,
+                UNIQUE(symbol, fiscal_year)
+            )
+        """)
+
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS nifty_constituents (
+                id       INTEGER PRIMARY KEY AUTOINCREMENT,
+                symbol   TEXT NOT NULL,
+                year     INTEGER NOT NULL,
+                in_index INTEGER NOT NULL,
+                UNIQUE(symbol, year)
+            )
+        """)
+
+        conn.commit()
+        return conn
+
+    except sqlite3.Error as exc:
+        raise FundamentalsError(
+            f"Failed to initialise historical tables at {db_path}: {exc}"
+        ) from exc
+
+
+def _populate_nifty_constituents(conn: sqlite3.Connection) -> None:
+    """Populate nifty_constituents table from the hardcoded NIFTY_CONSTITUENTS_BY_SYMBOL dict.
+
+    Inserts one row per (symbol, year) combination for all years 2010-2023.
+    in_index=1 if the symbol was in the Nifty 50 that year, 0 otherwise.
+    Uses INSERT OR IGNORE so calling this function twice is safe (idempotent).
+
+    Args:
+        conn: Open sqlite3.Connection with nifty_constituents table already created.
+
+    Raises:
+        FundamentalsError: If any SQLite write fails.
+    """
+    rows: list[tuple[str, int, int]] = []
+    for symbol, years_in_index in NIFTY_CONSTITUENTS_BY_SYMBOL.items():
+        years_set = set(years_in_index)
+        for year in range(HISTORICAL_START_YEAR, HISTORICAL_END_YEAR + 1):
+            in_index = 1 if year in years_set else 0
+            rows.append((symbol, year, in_index))
+
+    try:
+        with conn:
+            conn.executemany(
+                "INSERT OR IGNORE INTO nifty_constituents (symbol, year, in_index) VALUES (?, ?, ?)",
+                rows,
+            )
+    except sqlite3.Error as exc:
+        raise FundamentalsError(
+            f"Failed to populate nifty_constituents: {exc}"
+        ) from exc
+
+
+def fetch_historical_fundamentals(
+    symbols: list[str],
+    force_refresh: bool = False,
+) -> None:
+    """Fetch and store historical annual fundamentals from Screener.in for each symbol.
+
+    Scrapes annual ROE, D/E, and EPS from Screener.in's Key Ratios, Balance Sheet,
+    and Profit & Loss sections. Stores results to the fundamentals_history SQLite
+    table. Returns None — callers query the table via get_fundamentals_for_date().
+
+    Staleness rule: skips symbols where ALL rows in fundamentals_history are
+    fetched within the last 45 days (unless force_refresh=True). Fetches when
+    any rows are stale, missing expected years, or force_refresh=True.
+
+    3-strike fallback: after 3 Screener.in failures for a symbol, falls back to
+    yfinance for the current year only. Prior years receive NULL-valued placeholder
+    rows with data_source='yfinance_fallback' and data_quality='failed', so
+    get_fundamentals_for_date() returns 'missing' quality rather than raising.
+
+    EPS approximation: eps_positive is 1 if annual EPS > 0, NOT the quarterly
+    4-consecutive check used in live trading. This is documented explicitly
+    in the fundamentals_history schema and carried through to eps_positive_4q
+    in get_fundamentals_for_date() output. See spec Section 7.
+
+    Args:
+        symbols: List of NSE ticker symbols without .NS suffix.
+        force_refresh: If True, re-fetches all symbols regardless of cache age.
+
+    Raises:
+        ValueError: If symbols list is empty.
+        FundamentalsError: If SQLite operations fail.
+    """
+    if not symbols:
+        raise ValueError("symbols list must not be empty")
+
+    db_path = settings.database_url.replace("sqlite:///", "")
+    conn = _init_historical_tables(db_path)
+
+    try:
+        now_ist = _now_ist()
+        cutoff_days = 45
+
+        for symbol in symbols:
+            # ----------------------------------------------------------------
+            # STEP 1: Staleness check
+            # ----------------------------------------------------------------
+            if not force_refresh:
+                try:
+                    rows_db = conn.execute(
+                        "SELECT fetched_at_ist FROM fundamentals_history WHERE symbol = ?",
+                        (symbol,),
+                    ).fetchall()
+                except sqlite3.Error as exc:
+                    raise FundamentalsError(
+                        f"DB read failed for staleness check on {symbol}: {exc}"
+                    ) from exc
+
+                if rows_db:
+                    # Check if ALL rows are within 45 days
+                    all_fresh = True
+                    for (fetched_at_str,) in rows_db:
+                        try:
+                            fetched_dt = datetime.datetime.fromisoformat(fetched_at_str)
+                            age_days = (
+                                datetime.datetime.now(fetched_dt.tzinfo) - fetched_dt
+                            ).total_seconds() / 86400
+                            if age_days >= cutoff_days:
+                                all_fresh = False
+                                break
+                        except (ValueError, TypeError):
+                            all_fresh = False
+                            break
+
+                    if all_fresh:
+                        logger.info(
+                            "Historical fundamentals cache hit for %s — skipping fetch",
+                            symbol,
+                        )
+                        continue
+
+            # ----------------------------------------------------------------
+            # STEP 2: Screener.in fetch with 3-strike retry
+            # ----------------------------------------------------------------
+            time.sleep(random.uniform(2, 5))
+
+            strike_count = 0
+            parsed_data: dict[int, dict[str, float | int | None]] | None = None
+
+            while strike_count < MAX_STRIKES:
+                try:
+                    parsed_data = _scrape_screener_historical(symbol)
+                    if parsed_data is not None:
+                        break
+                    strike_count += 1
+                    logger.warning(
+                        "Screener.in historical parse failed for %s (strike %d/%d)",
+                        symbol, strike_count, MAX_STRIKES,
+                    )
+                    if strike_count < MAX_STRIKES:
+                        time.sleep(random.uniform(2, 5))
+                except requests.exceptions.RequestException as exc:
+                    strike_count += 1
+                    logger.warning(
+                        "Screener.in request error for %s (strike %d/%d): %s",
+                        symbol, strike_count, MAX_STRIKES, exc,
+                    )
+                    if strike_count < MAX_STRIKES:
+                        time.sleep(random.uniform(2, 5))
+
+            # ----------------------------------------------------------------
+            # STEP 3: Store Screener.in results
+            # ----------------------------------------------------------------
+            if parsed_data is not None and parsed_data:
+                try:
+                    with conn:
+                        for fiscal_year, fields in parsed_data.items():
+                            conn.execute(
+                                """
+                                INSERT OR REPLACE INTO fundamentals_history
+                                    (symbol, fiscal_year, roe, debt_to_equity,
+                                     eps_positive, data_source, data_quality, fetched_at_ist)
+                                VALUES (?, ?, ?, ?, ?, 'screener', 'clean', ?)
+                                """,
+                                (
+                                    symbol,
+                                    fiscal_year,
+                                    fields.get("roe"),
+                                    fields.get("debt_to_equity"),
+                                    fields.get("eps_positive"),
+                                    now_ist,
+                                ),
+                            )
+                    logger.info(
+                        "Stored %d years of historical fundamentals for %s from Screener.in",
+                        len(parsed_data), symbol,
+                    )
+                    continue
+                except sqlite3.Error as exc:
+                    raise FundamentalsError(
+                        f"DB write failed for historical fundamentals of {symbol}: {exc}"
+                    ) from exc
+
+            # ----------------------------------------------------------------
+            # STEP 4: 3-strike limit reached — yfinance fallback
+            # ----------------------------------------------------------------
+            logger.warning(
+                "Screener.in failed %d times for %s — falling back to yfinance",
+                MAX_STRIKES, symbol,
+            )
+
+            current_year = datetime.date.today().year
+            yf_roe: float | None = None
+            yf_de: float | None = None
+            yf_eps_positive: int | None = None
+            yf_source = "yfinance_fallback"
+
+            try:
+                info: dict = yf.Ticker(f"{symbol}.NS").info
+                if info:
+                    raw_roe = info.get("returnOnEquity")
+                    if raw_roe is not None:
+                        yf_roe = float(raw_roe)
+
+                    raw_de = info.get("debtToEquity")
+                    if raw_de is not None:
+                        de_val = float(raw_de)
+                        if de_val > DE_NORMALISATION_THRESHOLD:
+                            de_val = de_val / 100.0
+                        yf_de = de_val
+
+                    trailing_eps = info.get("trailingEps")
+                    if trailing_eps is not None:
+                        yf_eps_positive = 1 if float(trailing_eps) > 0 else 0
+            except (requests.exceptions.RequestException, KeyError, ValueError) as exc:
+                logger.error("yfinance fallback failed for %s: %s", symbol, exc)
+                yf_source = "failed"
+
+            try:
+                with conn:
+                    # Current year: store whatever yfinance returned (degraded quality)
+                    conn.execute(
+                        """
+                        INSERT OR REPLACE INTO fundamentals_history
+                            (symbol, fiscal_year, roe, debt_to_equity,
+                             eps_positive, data_source, data_quality, fetched_at_ist)
+                        VALUES (?, ?, ?, ?, ?, ?, 'degraded', ?)
+                        """,
+                        (symbol, current_year, yf_roe, yf_de, yf_eps_positive,
+                         yf_source, now_ist),
+                    )
+
+                    # All prior years with no DB data: insert NULL placeholder rows
+                    existing_years = {
+                        row[0] for row in conn.execute(
+                            "SELECT fiscal_year FROM fundamentals_history WHERE symbol = ?",
+                            (symbol,),
+                        ).fetchall()
+                    }
+                    for year in range(HISTORICAL_START_YEAR, current_year):
+                        if year not in existing_years:
+                            conn.execute(
+                                """
+                                INSERT OR IGNORE INTO fundamentals_history
+                                    (symbol, fiscal_year, roe, debt_to_equity,
+                                     eps_positive, data_source, data_quality, fetched_at_ist)
+                                VALUES (?, ?, NULL, NULL, NULL, 'yfinance_fallback', 'failed', ?)
+                                """,
+                                (symbol, year, now_ist),
+                            )
+            except sqlite3.Error as exc:
+                raise FundamentalsError(
+                    f"DB write failed for yfinance fallback data of {symbol}: {exc}"
+                ) from exc
+
+            logger.warning(
+                "Stored yfinance_fallback fundamentals for %s (current year only; "
+                "prior years marked as failed)",
+                symbol,
+            )
+
+    finally:
+        conn.close()
+
+
+def _scrape_screener_historical(
+    symbol: str,
+) -> dict[int, dict[str, float | int | None]] | None:
+    """Scrape multi-year annual fundamentals from Screener.in for a single symbol.
+
+    Parses the Key Ratios, Balance Sheet, and Profit & Loss tables to extract
+    ROE, D/E, and EPS across all available fiscal years (up to 10-12 years).
+
+    Tries the consolidated URL first, then standalone. Returns None only on
+    HTTP/network failure or complete parse failure (no year columns found).
+    Partial data (some fields NULL for some years) is returned as-is.
+
+    Args:
+        symbol: NSE ticker symbol without .NS suffix.
+
+    Returns:
+        Dict mapping fiscal_year (int) -> {"roe": float|None, "debt_to_equity":
+        float|None, "eps_positive": int|None}, or None on failure.
+
+    Raises:
+        requests.exceptions.RequestException: Propagated for caller's 3-strike logic.
+    """
+    urls = [
+        f"{SCREENER_BASE_URL}/{symbol}/consolidated/",
+        f"{SCREENER_BASE_URL}/{symbol}/",
+    ]
+
+    html_text: str | None = None
+    for url in urls:
+        response = requests.get(
+            url,
+            headers=SCREENER_HEADERS,
+            timeout=SCREENER_TIMEOUT,
+            allow_redirects=True,
+        )
+        if response.status_code == 200:
+            html_text = response.text
+            break
+        logger.warning(
+            "Screener.in returned HTTP %d for %s at %s",
+            response.status_code, symbol, url,
+        )
+
+    if html_text is None:
+        return None
+
+    soup = BeautifulSoup(html_text, "html.parser")
+
+    # ----------------------------------------------------------------
+    # Extract year headers from Key Ratios section ("Mar YYYY")
+    # ----------------------------------------------------------------
+    fiscal_years: list[int] = []
+    roe_by_year: dict[int, float | None] = {}
+    de_by_year: dict[int, float | None] = {}
+    eps_by_year: dict[int, int | None] = {}
+
+    # --- ROE from Key Ratios section ---
+    for section in soup.find_all("section"):
+        heading = section.find(["h2", "h3"])
+        if heading is None:
+            continue
+        heading_text = heading.get_text(strip=True)
+        if "Ratio" not in heading_text:
+            continue
+        table = section.find("table")
+        if table is None:
+            break
+
+        rows_in_table = table.find_all("tr")
+        if not rows_in_table:
+            break
+
+        # First row: year headers — cells contain "Mar YYYY"
+        header_cells = rows_in_table[0].find_all(["th", "td"])
+        for cell in header_cells[1:]:  # skip first label cell
+            raw = cell.get_text(strip=True)
+            try:
+                if "Mar" in raw or "Sep" in raw or len(raw) == 4:
+                    year_str = raw.split()[-1]
+                    fiscal_years.append(int(year_str))
+            except (ValueError, IndexError):
+                continue
+
+        # Find ROE row
+        for row in rows_in_table[1:]:
+            cells = row.find_all(["th", "td"])
+            if not cells:
+                continue
+            label = cells[0].get_text(strip=True)
+            if "Return on equity" in label or "Return on Equity" in label or label.strip() == "ROE":
+                for idx, cell in enumerate(cells[1:len(fiscal_years) + 1]):
+                    raw_val = cell.get_text(strip=True).replace(",", "").replace("%", "").strip()
+                    if raw_val and raw_val != "--":
+                        try:
+                            roe_by_year[fiscal_years[idx]] = float(raw_val) / 100.0
+                        except ValueError:
+                            roe_by_year[fiscal_years[idx]] = None
+                    else:
+                        roe_by_year[fiscal_years[idx]] = None
+                break
+        break
+
+    # --- D/E from Balance Sheet section ---
+    for section in soup.find_all("section"):
+        heading = section.find(["h2", "h3"])
+        if heading is None:
+            continue
+        if "Balance Sheet" not in heading.get_text():
+            continue
+        table = section.find("table")
+        if table is None:
+            break
+
+        rows_in_table = table.find_all("tr")
+        if not rows_in_table:
+            break
+
+        # Extract year headers from Balance Sheet (may differ from Ratios)
+        bs_years: list[int] = []
+        header_cells = rows_in_table[0].find_all(["th", "td"])
+        for cell in header_cells[1:]:
+            raw = cell.get_text(strip=True)
+            try:
+                if "Mar" in raw or "Sep" in raw or len(raw) == 4:
+                    year_str = raw.split()[-1]
+                    bs_years.append(int(year_str))
+            except (ValueError, IndexError):
+                continue
+
+        # If no year headers found in Balance Sheet, fall back to Ratios years
+        if not bs_years:
+            bs_years = fiscal_years
+
+        equity_capital_by_year: dict[int, float | None] = {}
+        reserves_by_year: dict[int, float | None] = {}
+        borrowings_by_year: dict[int, float | None] = {}
+
+        for row in rows_in_table[1:]:
+            cells = row.find_all(["th", "td"])
+            if not cells:
+                continue
+            label = cells[0].get_text(strip=True).rstrip("+")
+            for idx, cell in enumerate(cells[1:len(bs_years) + 1]):
+                if idx >= len(bs_years):
+                    break
+                raw_val = cell.get_text(strip=True).replace(",", "").strip()
+                if raw_val and raw_val != "--":
+                    try:
+                        val: float | None = float(raw_val)
+                    except ValueError:
+                        val = None
+                else:
+                    val = None
+
+                if label == "Equity Capital":
+                    equity_capital_by_year[bs_years[idx]] = val
+                elif label == "Reserves":
+                    reserves_by_year[bs_years[idx]] = val
+                elif label in ("Borrowings", "Borrowing"):
+                    borrowings_by_year[bs_years[idx]] = val
+
+        for year in bs_years:
+            ec = equity_capital_by_year.get(year)
+            res = reserves_by_year.get(year)
+            borr = borrowings_by_year.get(year)
+            if ec is not None and res is not None and borr is not None:
+                equity_total = ec + res
+                if equity_total > 0:
+                    de_by_year[year] = borr / equity_total
+                else:
+                    de_by_year[year] = None
+            else:
+                de_by_year[year] = None
+        break
+
+    # --- EPS from Profit & Loss section ---
+    for section in soup.find_all("section"):
+        heading = section.find(["h2", "h3"])
+        if heading is None:
+            continue
+        heading_text = heading.get_text(strip=True)
+        if "Profit" not in heading_text and "Loss" not in heading_text:
+            continue
+        # Skip Quarterly P&L — we need the annual one
+        if "Quarterly" in heading_text:
+            continue
+        table = section.find("table")
+        if table is None:
+            break
+
+        rows_in_table = table.find_all("tr")
+        if not rows_in_table:
+            break
+
+        # Extract year headers from P&L (may have different coverage)
+        pl_years: list[int] = []
+        header_cells = rows_in_table[0].find_all(["th", "td"])
+        for cell in header_cells[1:]:
+            raw = cell.get_text(strip=True)
+            try:
+                if "Mar" in raw or "Sep" in raw or len(raw) == 4:
+                    year_str = raw.split()[-1]
+                    pl_years.append(int(year_str))
+            except (ValueError, IndexError):
+                continue
+
+        if not pl_years:
+            pl_years = fiscal_years
+
+        for row in rows_in_table[1:]:
+            cells = row.find_all(["th", "td"])
+            if not cells:
+                continue
+            label = cells[0].get_text(strip=True)
+            if label in ("EPS in Rs", "EPS"):
+                for idx, cell in enumerate(cells[1:len(pl_years) + 1]):
+                    if idx >= len(pl_years):
+                        break
+                    raw_val = cell.get_text(strip=True).replace(",", "").strip()
+                    if raw_val and raw_val != "--":
+                        try:
+                            eps_val = float(raw_val)
+                            eps_by_year[pl_years[idx]] = 1 if eps_val > 0 else 0
+                        except ValueError:
+                            eps_by_year[pl_years[idx]] = None
+                    else:
+                        eps_by_year[pl_years[idx]] = None
+                break
+        break
+
+    # ----------------------------------------------------------------
+    # Merge all years into a single result dict
+    # ----------------------------------------------------------------
+    all_years = set(fiscal_years) | set(de_by_year.keys()) | set(eps_by_year.keys())
+
+    if not all_years:
+        logger.warning("No year columns found in Screener.in for %s", symbol)
+        return None
+
+    result: dict[int, dict[str, float | int | None]] = {}
+    for year in all_years:
+        result[year] = {
+            "roe": roe_by_year.get(year),
+            "debt_to_equity": de_by_year.get(year),
+            "eps_positive": eps_by_year.get(year),
+        }
+
+    return result
+
+
+def get_fundamentals_for_date(
+    symbols: list[str],
+    as_of_date: datetime.date,
+) -> pd.DataFrame:
+    """Return point-in-time fundamentals for symbols as of a given historical date.
+
+    Selects the fiscal year corresponding to as_of_date using the Indian FY
+    safe-publish rule (lookahead-bias-free):
+      - month <= 6 (Jan–June): fiscal_year = as_of_date.year - 1
+        (FY results not yet reliably published; use prior completed FY)
+      - month >= 7 (Jul–Dec): fiscal_year = as_of_date.year
+        (FY ending March of this year is safely published by July)
+
+    Examples:
+      2015-06-30 -> fiscal_year=2014  (June: FY2015 not yet published)
+      2015-07-01 -> fiscal_year=2015  (July: FY2015 safely published)
+      2015-04-01 -> fiscal_year=2014  (April: FY2015 just ended, not published)
+      2014-10-15 -> fiscal_year=2014  (October: FY2014 published ✓)
+
+    The output column eps_positive_4q carries annual EPS > 0 (not 4-quarter
+    check) for historical data. This is an accepted approximation for backtesting.
+    See spec Section 7 and fetch_historical_fundamentals() docstring.
+
+    Output columns match fetch_fundamentals() output (minus pe_ratio and
+    cache_age_days) for drop-in compatibility with quality_filter.py.
+
+    Args:
+        symbols: List of NSE ticker symbols without .NS suffix.
+        as_of_date: The historical date for which to retrieve fundamentals.
+
+    Returns:
+        pd.DataFrame with one row per symbol. Columns: symbol, roe,
+        debt_to_equity, eps_positive_4q, data_source, data_quality,
+        fetched_at_ist. Symbols with no DB row return NaN financials
+        and data_quality="missing". Sorted by symbol ascending.
+
+    Raises:
+        ValueError: If symbols list is empty or as_of_date is not datetime.date.
+        FundamentalsError: If SQLite operations fail.
+    """
+    if not symbols:
+        raise ValueError("symbols list must not be empty")
+    if not isinstance(as_of_date, datetime.date):
+        raise ValueError(
+            f"as_of_date must be a datetime.date instance, got {type(as_of_date)}"
+        )
+
+    # Determine safe fiscal year (no lookahead bias)
+    if as_of_date.month <= 6:
+        fiscal_year = as_of_date.year - 1
+    else:
+        fiscal_year = as_of_date.year
+
+    db_path = settings.database_url.replace("sqlite:///", "")
+    conn = _init_historical_tables(db_path)
+
+    rows: list[dict[str, object]] = []
+
+    try:
+        for symbol in symbols:
+            try:
+                row_db = conn.execute(
+                    """
+                    SELECT roe, debt_to_equity, eps_positive,
+                           data_source, data_quality, fetched_at_ist
+                    FROM fundamentals_history
+                    WHERE symbol = ? AND fiscal_year = ?
+                    """,
+                    (symbol, fiscal_year),
+                ).fetchone()
+            except sqlite3.Error as exc:
+                raise FundamentalsError(
+                    f"DB read failed for {symbol} fiscal_year={fiscal_year}: {exc}"
+                ) from exc
+
+            if row_db is not None:
+                roe_val, de_val, eps_val, data_source, data_quality, fetched_at_ist = row_db
+                rows.append({
+                    "symbol": symbol,
+                    "roe": float("nan") if roe_val is None else float(roe_val),
+                    "debt_to_equity": float("nan") if de_val is None else float(de_val),
+                    "eps_positive_4q": bool(eps_val) if eps_val is not None else False,
+                    "data_source": data_source,
+                    "data_quality": data_quality,
+                    "fetched_at_ist": fetched_at_ist,
+                })
+            else:
+                rows.append({
+                    "symbol": symbol,
+                    "roe": float("nan"),
+                    "debt_to_equity": float("nan"),
+                    "eps_positive_4q": False,
+                    "data_source": "missing",
+                    "data_quality": "missing",
+                    "fetched_at_ist": _now_ist(),
+                })
+    finally:
+        conn.close()
+
+    df = pd.DataFrame(rows)
+
+    # Enforce dtypes
+    df["roe"] = df["roe"].astype("float64")
+    df["debt_to_equity"] = df["debt_to_equity"].astype("float64")
+    df["eps_positive_4q"] = df["eps_positive_4q"].astype(bool)
+
+    df = df.sort_values("symbol").reset_index(drop=True)
+
+    return df
+
+
+def get_nifty_universe_for_year(year: int) -> list[str]:
+    """Return NSE ticker symbols that were in the Nifty 50 for the given calendar year.
+
+    Lazily initialises the nifty_constituents table on first call.
+    Returns an empty list if the year is outside 2010-2023 — no error raised.
+
+    Args:
+        year: Calendar year (e.g. 2015). Returns empty list if outside 2010-2023.
+
+    Returns:
+        List of NSE ticker symbols sorted alphabetically. Empty list if year
+        is out of range or no constituents found.
+
+    Raises:
+        FundamentalsError: If SQLite operations fail.
+    """
+    db_path = settings.database_url.replace("sqlite:///", "")
+    conn = _init_historical_tables(db_path)
+
+    try:
+        try:
+            count_row = conn.execute(
+                "SELECT COUNT(*) FROM nifty_constituents"
+            ).fetchone()
+            count = count_row[0] if count_row else 0
+        except sqlite3.Error as exc:
+            raise FundamentalsError(
+                f"DB read failed checking nifty_constituents count: {exc}"
+            ) from exc
+
+        if count == 0:
+            _populate_nifty_constituents(conn)
+
+        try:
+            rows_db = conn.execute(
+                """
+                SELECT symbol FROM nifty_constituents
+                WHERE year = ? AND in_index = 1
+                ORDER BY symbol
+                """,
+                (year,),
+            ).fetchall()
+        except sqlite3.Error as exc:
+            raise FundamentalsError(
+                f"DB read failed for nifty_constituents year={year}: {exc}"
+            ) from exc
+
+        return [row[0] for row in rows_db]
+
+    finally:
+        conn.close()

@@ -212,23 +212,24 @@ def get_fundamentals_for_date(
 **Purpose:** Returns one row per symbol with fundamentals as of the given date,
 using point-in-time fiscal year selection. Zero lookahead bias.
 
-**Indian fiscal year rule:**
+**Indian fiscal year rule (point-in-time safe):**
 - Indian FY runs April 1 to March 31.
-- Annual results for FY ending March YYYY are typically published by June-August
-  of that year. For backtest safety, we use the FY that would have been the most
-  recently COMPLETED as of as_of_date:
-  - If `as_of_date.month >= 4` (April onward): `fiscal_year = as_of_date.year`
-    Reasoning: by April, FY{year} (ending March {year}) results are being
-    published or already available.
-  - If `as_of_date.month < 4` (Jan/Feb/Mar): `fiscal_year = as_of_date.year - 1`
-    Reasoning: FY{year} has not ended yet; use the previous completed FY.
+- FY results are published 2–3 months AFTER the FY ends (March). FY2015
+  (ending March 2015) results are not reliably available until ~June–July 2015.
+  Using April as the cutoff introduces lookahead bias — April data uses FY2015
+  numbers the market didn't yet have. The cutoff must be July (month 7).
+  - If `as_of_date.month >= 7` (July onward): `fiscal_year = as_of_date.year`
+    Reasoning: by July, FY{year} (ending March {year}) results are published.
+  - If `as_of_date.month <= 6` (Jan–June): `fiscal_year = as_of_date.year - 1`
+    Reasoning: FY{year} results not yet safely published; use prior completed FY.
 
 **Examples:**
-- 2014-10-15 -> fiscal_year = 2014 (FY2014 = Apr 2013 - Mar 2014, published by ~Aug 2014)
-- 2015-05-20 -> fiscal_year = 2015 (FY2015 = Apr 2014 - Mar 2015, publishing in progress)
-- 2015-02-10 -> fiscal_year = 2014 (FY2015 not ended yet)
-- 2020-04-01 -> fiscal_year = 2020 (FY2020 just ended, results publishing soon)
-- 2020-03-31 -> fiscal_year = 2019 (still in FY2020, use prior)
+- 2014-10-15 -> fiscal_year = 2014 (FY2014 results published by Jul 2014 ✓)
+- 2015-07-01 -> fiscal_year = 2015 (FY2015 safely published by Jul 2015 ✓)
+- 2015-06-30 -> fiscal_year = 2014 (FY2015 not yet safely published ✓)
+- 2015-04-01 -> fiscal_year = 2014 (April: FY2015 just ended, not yet published ✓)
+- 2015-02-10 -> fiscal_year = 2014 (FY2015 not ended yet ✓)
+- 2020-03-31 -> fiscal_year = 2019 (still in FY2020, use prior ✓)
 
 **Algorithm:**
 ```
@@ -333,8 +334,8 @@ def _populate_nifty_constituents(conn: sqlite3.Connection) -> None:
 # Database path resolved from settings (same as paper_trader.py)
 # Resolved at function call time, not import time
 
-# Fiscal year boundaries
-FISCAL_YEAR_START_MONTH: int = 4  # April
+# Fiscal year safe-publish cutoff: FY results available from July onward
+FISCAL_YEAR_SAFE_MONTH: int = 7  # July — FY results safely published by this month
 
 # Historical data range
 HISTORICAL_START_YEAR: int = 2010
@@ -607,14 +608,14 @@ All tests go in `tests/data/test_historical_fundamentals.py`.
 | 3 | test_fetch_historical_stores_rows | Mock Screener.in response; verify rows written to `fundamentals_history` |
 | 4 | test_fetch_historical_cache_hit | Insert fresh rows (< 45 days); call with `force_refresh=False`; verify no HTTP request made |
 | 5 | test_fetch_historical_force_refresh | Insert fresh rows; call with `force_refresh=True`; verify HTTP request IS made |
-| 6 | test_get_date_fiscal_year_jan | `as_of_date=2015-01-15` -> fiscal_year=2014 |
-| 7 | test_get_date_fiscal_year_feb | `as_of_date=2015-02-28` -> fiscal_year=2014 |
-| 8 | test_get_date_fiscal_year_mar | `as_of_date=2015-03-31` -> fiscal_year=2014 |
-| 9 | test_get_date_fiscal_year_apr | `as_of_date=2015-04-01` -> fiscal_year=2015 |
-| 10 | test_get_date_fiscal_year_oct | `as_of_date=2014-10-15` -> fiscal_year=2014 |
+| 6 | test_get_date_fiscal_year_jan | `as_of_date=2015-01-15` -> fiscal_year=2014 (Jan ≤ 6) |
+| 7 | test_get_date_fiscal_year_jun | `as_of_date=2015-06-30` -> fiscal_year=2014 (Jun ≤ 6, FY2015 not yet published) |
+| 8 | test_get_date_fiscal_year_jul | `as_of_date=2015-07-01` -> fiscal_year=2015 (Jul ≥ 7, FY2015 safely published) |
+| 9 | test_get_date_fiscal_year_apr | `as_of_date=2015-04-01` -> fiscal_year=2014 (Apr ≤ 6, NOT 2015 — lookahead bias prevented) |
+| 10 | test_get_date_fiscal_year_oct | `as_of_date=2014-10-15` -> fiscal_year=2014 (Oct ≥ 7) |
 | 11 | test_get_date_missing_row | No row in DB for symbol+fiscal_year -> data_quality="missing", all financials NaN |
 | 12 | test_get_date_schema_compat | Output columns match `fetch_fundamentals()` output (minus pe_ratio, cache_age_days) |
-| 13 | test_get_date_no_future_leak | Insert FY2015 row; query with as_of_date=2015-02-10; verify FY2014 used (not FY2015) |
+| 13 | test_get_date_no_future_leak | Insert FY2015 row; query with as_of_date=2015-05-01 (May, month ≤ 6); verify FY2014 used (not FY2015) |
 | 14 | test_nifty_universe_2015 | `get_nifty_universe_for_year(2015)` returns non-empty list containing known members |
 | 15 | test_nifty_universe_2020 | `get_nifty_universe_for_year(2020)` returns non-empty list containing known members |
 | 16 | test_populate_idempotent | Call `_populate_nifty_constituents()` twice; verify no duplicate rows |

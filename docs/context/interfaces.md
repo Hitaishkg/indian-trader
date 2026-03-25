@@ -29,6 +29,9 @@
 
 - `fetch_fundamentals(symbols: list[str], force_refresh: bool = False) -> pd.DataFrame` — fetches fundamentals from Screener.in with yfinance fallback; returns one row per symbol (failed symbols included with NaN)
 - `get_cache_age_days(symbol: str) -> float | None` — returns cache age in days or None if no cache exists
+- `fetch_historical_fundamentals(symbols: list[str], force_refresh: bool = False) -> None` — fetches annual historical fundamentals from Screener.in and stores to fundamentals_history SQLite table; 3-strike yfinance fallback; 45-day staleness check; returns None (callers query via get_fundamentals_for_date)
+- `get_fundamentals_for_date(symbols: list[str], as_of_date: datetime.date) -> pd.DataFrame` — returns point-in-time fundamentals for as_of_date with no lookahead bias; fiscal year rule: month<=6 → year-1, month>=7 → year; output columns match fetch_fundamentals() (minus pe_ratio/cache_age_days) for quality_filter.py compatibility; eps_positive_4q is annual approximation for historical data
+- `get_nifty_universe_for_year(year: int) -> list[str]` — returns NSE symbols in Nifty 50 for given calendar year (2010-2023); lazily populates nifty_constituents table on first call; returns empty list if year out of range
 
 ## src/utils/logger.py
 

@@ -1,4 +1,5 @@
 # Decisions Log — Fast Reference
+[2026-03-25] fundamentals.py (historical) — fiscal year cutoff is month >= 7 (July), NOT month >= 4 (April). Indian FY results published 2–3 months after March year-end; using April creates lookahead bias. July is the safe cutoff.
 [2026-03-25] regime.py — pure computation module; does NOT call update_stop_loss(); only returns stop_tighten_symbols; caller executes stop updates
 [2026-03-25] regime.py — nifty_ohlcv_df requires only date+close (no symbol); use fetch_sector_indices() not fetch_ohlcv() to get Nifty 50 data (confirmed 270 rows available)
 [2026-03-25] regime.py — close == 200 SMA → ABOVE_200DMA (uses >=); avoids unnecessary position reduction at boundary
