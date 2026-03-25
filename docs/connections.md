@@ -88,6 +88,30 @@
 - eps_positive_4q: from yfinance fallback uses trailingEps > 0 (approximation — cannot detect single negative quarter within positive trailing year)
 - Screener.in scraping: 2–5 second random delay before each request; consolidated URL tried first, standalone fallback
 
+### Historical Additions (backtest support)
+
+**Public API:**
+- `class FundamentalsError(Exception)` — raised on DB or network failures during historical fetch
+- `fetch_historical_fundamentals(symbols: list[str], force_refresh: bool = False) -> None` — scrapes Screener.in quarterly data (all available history), stores to fundamentals_history table in SQLite; no return value (side-effect write only)
+- `get_fundamentals_for_date(symbols: list[str], as_of_date: datetime.date) -> pd.DataFrame` — point-in-time historical fundamentals; fiscal year lookup: month <= 6 uses prior FY results, month >= 7 uses current FY results
+- `get_nifty_universe_for_year(year: int) -> list[str]` — returns list of Nifty 50 constituents that were in the index during that year (from nifty_constituents table)
+- `NIFTY_CONSTITUENTS_BY_SYMBOL` dict — hardcoded 67-symbol Nifty 50 constituent list with fiscal year entry dates (covers 2010–2023 all known entries)
+
+**Reads from:** Screener.in (quarterly history scraping), SQLite fundamentals_history table (point-in-time lookups)
+
+**Writes to:** fundamentals_history table (all quarterly fundamentals for all symbols), nifty_constituents table (Nifty membership by fiscal year)
+
+**Called by:** src/backtest/runner.py (Phase 2, step 5+)
+
+**Calls:** requests (Screener.in HTTP), sqlite3 (stdlib), pandas (DataFrame construction), zoneinfo (IST timestamps)
+
+**Key constants / thresholds relevant to debugging:**
+- `NIFTY_CONSTITUENTS_BY_SYMBOL` — 67 symbols covering entry dates from 2010 to 2023; manually updated when NSE rebalances
+- Fiscal year cutoff: month >= 7 → use current FY (FY=year), month <= 6 → use prior FY (FY=year-1). July chosen because BSE publishes FY results between May and July (not safe for point-in-time lookups before July)
+- `eps_positive_4q` column: maps annual EPS > 0 to positive four-quarter EPS flag for schema compatibility with validator.py
+- `FundamentalsError` is local exception (not imported from validator.py — incompatible signature with DataQualityError)
+- Historical fetch may take 5–10 seconds per symbol due to Screener.in delays (2–5 second inter-request pause)
+
 ## src/utils/logger.py
 
 **Purpose:** Configures Python's logging framework to emit structured log records to both stderr (console) and the SQLite `agent_logs` table simultaneously.

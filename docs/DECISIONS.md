@@ -7,6 +7,13 @@
 
 ---
 
+## [2026-03-25] — src/data/fundamentals.py (historical additions)
+
+**Built**: Point-in-time historical fundamentals (Screener.in scraping, SQLite storage) + Nifty 50 constituent universe for 2010–2023.
+**Connects to**: Writes to fundamentals_history + nifty_constituents tables; called by backtest/runner.py.
+**Next step**: src/backtest/runner.py spec update (now unblocked)
+**Notes**: Fiscal year cutoff is month>=7 (July), NOT April — FY results not safely published until ~July. EPS approximation: annual EPS>0 maps to eps_positive_4q column for schema compat. FundamentalsError is local (not imported from validator.py — incompatible signature).
+
 ## [2026-03-25] — src/strategy/regime.py
 
 **Built**: Nifty 50 200 DMA regime filter with three regimes, position size multipliers, and stop-loss tightening signals.

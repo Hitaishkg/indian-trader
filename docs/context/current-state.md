@@ -8,7 +8,7 @@
 | src/config/settings.py | ✅ Built | Environment loading; Settings singleton |
 | src/data/fetcher.py | ✅ Built | OHLCV fetcher; yfinance + jugaad-data with CSV cache |
 | src/data/cleaner.py | ✅ Built | Data repair; forward-fill missing, remove duplicates, flag anomalies |
-| src/data/fundamentals.py | ✅ Built | Screener.in scraper; 45-day JSON cache, yfinance fallback |
+| src/data/fundamentals.py | ✅ Built | Screener.in scraper; 45-day JSON cache, yfinance fallback; historical additions: fetch_historical_fundamentals, get_fundamentals_for_date, get_nifty_universe_for_year |
 | src/utils/logger.py | ✅ Built | SQLite logging; StreamHandler + SQLiteHandler |
 | src/utils/notifier.py | ✅ Built | Telegram + Gmail notifications (both channels, always) |
 | src/execution/paper_trader.py | ✅ Built | Simulated CNC orders; orders/positions/trades tables; GTT simulation; WAL mode |
@@ -22,7 +22,7 @@
 | src/strategy/quality_filter.py | ✅ Code review passed | Spec: docs/specs/2026-03-24-quality-filter.md |
 | src/strategy/momentum.py | ✅ Code review passed | Spec: docs/specs/2026-03-25-momentum.md |
 | src/strategy/regime.py | ✅ Code review passed | Spec: docs/specs/2026-03-25-regime.md |
-| src/data/fundamentals.py (historical additions) | ✅ Code review passed | Spec: docs/specs/2026-03-25-historical-fundamentals.md |
+| src/data/fundamentals.py (historical) | ✅ Code review passed | Spec: docs/specs/2026-03-25-historical-fundamentals.md |
 | src/backtest/runner.py | 📝 Spec written, awaiting approval | Spec: docs/specs/2026-03-25-backtest-runner.md |
 | src/backtest/validator.py | ⬜ Not started | |
 
