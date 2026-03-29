@@ -7,6 +7,13 @@
 
 ---
 
+## [2026-03-29] — src/backtest/runner.py
+
+**Built**: backtesting.py wrapper for full strategy validation over 2010–2023 historical data with multi-symbol portfolio tracking.
+**Connects to**: reads fundamentals_history + nifty_constituents tables (via fundamentals.py); calls quality_filter, momentum, regime, technical modules; writes nothing to DB.
+**Next step**: src/backtest/validator.py — gate checker that reads BacktestResult and sets gates_passed=True only if all 5 gates pass (Sharpe ≥ 1.0, drawdown < 15%, win rate > 40%, min 100 trades, profit factor > 1.3).
+**Notes**: backtesting.py is single-symbol; solved by feeding Nifty 50 index as dummy instrument and running all trade logic through _PortfolioTracker class. Weekly rebalance uses (iso_year, iso_week) tuple to handle Diwali week and other multi-day holiday blocks. Warm-up period: no trades for first 400 calendar days (approx Feb 2011 for 2010 start). Weekend bar guard prevents processing Saturday NSE non-trading sessions.
+
 ## [2026-03-25] — src/data/fundamentals.py (historical additions)
 
 **Built**: Point-in-time historical fundamentals (Screener.in scraping, SQLite storage) + Nifty 50 constituent universe for 2010–2023.

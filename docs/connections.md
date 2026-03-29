@@ -302,6 +302,52 @@
 - `PROXIMITY_THRESHOLD = 0.30` — soft: within 30% of 52-week high (never eliminates)
 - `MIN_UNIVERSE_SIZE = 3` — fewer than 3 passing → thin_universe=True, return empty DataFrame
 
+## src/backtest/runner.py
+
+**Purpose:** backtesting.py wrapper that runs quality_filter → momentum → regime pipeline over 2010–2023 historical data; returns BacktestResult with metrics for gate evaluation; solves single-symbol limitation by using Nifty 50 index as dummy instrument with multi-stock portfolio tracking in _PortfolioTracker class.
+
+**Public API**
+- `run_backtest(start_date: datetime.date, end_date: datetime.date, initial_cash: float = 10_000.0) -> BacktestResult` — runs full three-step strategy over historical date range; returns BacktestResult with gates_passed=False; raises ValueError on invalid inputs, BacktestError on data/simulation failures
+- `class BacktestResult` — frozen dataclass with fields: start_date, end_date, total_return_pct (float), annualized_return_pct (float), sharpe_ratio (float), max_drawdown_pct (float, positive), win_rate_pct (float), total_trades (int), profit_factor (float, inf if zero losses with wins, 0.0 if no wins), regime_changes (int), regime_blocked_weeks (int), raw_stats (dict), gates_passed (bool, always False from runner)
+- `class BacktestError(Exception)` — raised on fatal backtest errors; attributes: message (str), phase (str: "data_fetch", "strategy_init", "simulation", "stats_extraction")
+
+**Reads from:**
+- fundamentals_history table (via get_fundamentals_for_date): quarterly ROE, D/E, EPS data for point-in-time lookups with no lookahead bias
+- nifty_constituents table (via get_nifty_universe_for_year): Nifty 50 membership by calendar year (2010–2023)
+- yfinance + jugaad-data (via fetch_ohlcv): historical OHLCV for all Nifty 50 constituents over backtest window
+
+**Writes to:**
+- Nothing — returns BacktestResult in memory only; does not write to database
+
+**Called by:**
+- src/backtest/validator.py (Phase 2, step 6): reads BacktestResult, checks all 5 backtest gates (Sharpe, drawdown, win rate, trade count, profit factor), sets gates_passed=True if all pass
+
+**Calls:**
+- fetch_ohlcv(), fetch_sector_indices() (src/data/fetcher.py): historical OHLCV for stocks and Nifty 50 index
+- get_fundamentals_for_date(), get_nifty_universe_for_year() (src/data/fundamentals.py): point-in-time fundamentals and constituent universe
+- apply_quality_filter() (src/strategy/quality_filter.py): filters universe by 5 hard criteria
+- compute_momentum() (src/strategy/momentum.py): 12-1 momentum scores, top-5 selection
+- apply_regime_filter() (src/strategy/regime.py): Nifty 50 200 DMA regime filter
+- compute_atr_series() (src/indicators/technical.py): ATR for stop-loss calculation
+- log_agent_action() (src/utils/logger.py): logs to agent_logs
+
+**Key constants / thresholds:**
+- `AGENT_NAME = "backtest_runner"` — for agent_logs
+- `RISK_PER_TRADE = 0.01` — 1% of current balance per trade
+- `MAX_POSITIONS = 2` — maximum 2 simultaneous open positions
+- `MAX_POSITION_PCT = 0.40` — hard cap at 40% of total capital per position
+- `MAX_TRADE_AMOUNT = 10_000.0` — never execute single trade > ₹10,000 notional
+- `STOP_LOSS_ATR_NORMAL = 2.0` — normal regime: stop-loss at 2× ATR below entry
+- `STOP_LOSS_ATR_TIGHT = 1.0` — tight regime: stop-loss at 1× ATR below entry
+- `STOP_LOSS_MAX_PCT = 0.03` — hard cap: never tighten stop-loss more than 3% from entry
+- `TAKE_PROFIT_RATIO = 2.0` — take-profit at 2× stop-loss distance (minimum 1:2 risk-reward)
+- `ATR_PERIOD = 14` — Wilder-smoothed ATR for stop calculation
+- `MIN_BACKTEST_START = date(2010, 1, 1)` — earliest allowed backtest start
+- `MAX_BACKTEST_END = date(2023, 12, 31)` — latest allowed backtest end (historical data coverage)
+- `LOOKBACK_CALENDAR_DAYS = 400` — warm-up period (no trades for first ~400 calendar days to build indicator history); prevents trading on insufficient data
+- Weekly rebalance anchor: uses (iso_year, iso_week) tuple not iso_week alone — handles Diwali week and multi-day holiday blocks correctly
+- Weekend bar guard: skips Saturday NSE non-trading sessions to prevent anomalous price data
+
 ## src/execution/paper_trader.py
 
 **Purpose:** Simulated CNC swing trade execution engine with SQLite-backed orders, positions, and trades tables; GTT stop-loss and take-profit simulation without any broker API calls.

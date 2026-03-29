@@ -31,9 +31,9 @@ Zero delivery brokerage. CNC orders with GTT stop-losses.
 | src/execution/paper_trader.py | Simulated orders with P&L tracking | 1 | ✅ Built |
 | src/indicators/technical.py | RSI, MACD, Bollinger Bands, ATR | 2 | ✅ Built |
 | src/strategy/quality_filter.py | 5-filter hard pass/fail screen | 2 | ✅ Built |
-| src/strategy/momentum.py | 12-1 momentum factor, weekly recalc | 2 | ⏳ Pending |
-| src/strategy/regime.py | Nifty 50 200 DMA filter | 2 | ⏳ Pending |
-| src/backtest/runner.py | backtesting.py wrapper | 2 | ⏳ Pending |
+| src/strategy/momentum.py | 12-1 momentum factor, weekly recalc | 2 | ✅ Built |
+| src/strategy/regime.py | Nifty 50 200 DMA filter | 2 | ✅ Built |
+| src/backtest/runner.py | backtesting.py wrapper | 2 | ✅ Built |
 | src/backtest/validator.py | Backtest performance gate checks | 2 | ⏳ Pending |
 | src/agents/research_agent.py | Gemini news synthesis (Opus) | 3 | ⏳ Pending |
 | src/agents/signal_agent.py | Groq morning confirmation | 3 | ⏳ Pending |

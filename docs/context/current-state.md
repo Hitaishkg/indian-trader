@@ -23,11 +23,11 @@
 | src/strategy/momentum.py | ✅ Code review passed | Spec: docs/specs/2026-03-25-momentum.md |
 | src/strategy/regime.py | ✅ Code review passed | Spec: docs/specs/2026-03-25-regime.md |
 | src/data/fundamentals.py (historical) | ✅ Code review passed | Spec: docs/specs/2026-03-25-historical-fundamentals.md |
-| src/backtest/runner.py | ✅ Code review passed | Spec: docs/specs/2026-03-25-backtest-runner.md |
-| src/backtest/validator.py | ⬜ Not started | |
+| src/backtest/runner.py | ✅ Built | Spec: docs/specs/2026-03-25-backtest-runner.md. Integration: backtesting.py wrapper with _PortfolioTracker; weekly rebalance via (iso_year, iso_week) tuple; 400-day warm-up; weekend guard. |
+| src/backtest/validator.py | ⏳ Pending | |
 
 ## Phase 3–6
 ⬜ Not started
 
 ## Next Action
-Build **src/backtest/validator.py** (Phase 2, step 6 of 6) — checks all 5 backtest gates (Sharpe, drawdown, win rate, trade count, profit factor) against the BacktestResult returned by runner.py.
+Build **src/backtest/validator.py** (Phase 2, step 6 of 6) — gate checker that reads BacktestResult from runner.py, validates all 5 gates (Sharpe ≥ 1.0, max drawdown < 15%, win rate > 40%, min 100 trades, profit factor > 1.3), sets gates_passed=True only if all pass.
