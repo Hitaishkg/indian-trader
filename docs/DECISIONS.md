@@ -7,6 +7,13 @@
 
 ---
 
+## [2026-03-29] — src/backtest/validator.py
+
+**Built**: Pure computation gate checker; evaluates BacktestResult against 5 backtest gates from risk.md
+**Connects to**: reads BacktestResult from runner.py (in-memory); writes nothing to DB except agent_logs via log_agent_action
+**Next step**: Phase 2 milestone — run backtest over 2010–2023, all 5 gates must pass before Phase 3 begins
+**Notes**: Only module that sets gates_passed=True (via dataclasses.replace). Strict inequalities on all gates except total_trades which uses >=. float('inf') profit_factor passes naturally. Phase 2 build complete.
+
 ## [2026-03-29] — src/backtest/runner.py
 
 **Built**: backtesting.py wrapper for full strategy validation over 2010–2023 historical data with multi-symbol portfolio tracking.

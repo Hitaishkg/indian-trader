@@ -348,6 +348,31 @@
 - Weekly rebalance anchor: uses (iso_year, iso_week) tuple not iso_week alone — handles Diwali week and multi-day holiday blocks correctly
 - Weekend bar guard: skips Saturday NSE non-trading sessions to prevent anomalous price data
 
+## src/backtest/validator.py — Pure computation gate checker
+
+**Purpose:** Evaluates BacktestResult against 5 required gates from risk.md. Only module that sets gates_passed=True. Returns ValidationResult with per-gate breakdown and final verdict. Contains zero business logic beyond gate checking.
+
+**Public API**
+- `validate_backtest(result: BacktestResult) -> ValidationResult` — evaluates result against all 5 gates; returns ValidationResult; raises ValueError if total_trades < 0 (corrupt input)
+- `class GateResult(frozen)` — gate_name, threshold, actual_value, passed (bool)
+- `class ValidationResult(frozen)` — all_gates_passed, gate_results (tuple of 5 GateResult), validated_result (BacktestResult with gates_passed=True if all pass, else unchanged)
+
+**Reads from:** BacktestResult passed by caller (in-memory; no DB or external source reads)
+
+**Writes to:** agent_logs table (via log_agent_action only; one entry on completion)
+
+**Called by:** main.py / Phase 2 validation run (post-backtest)
+
+**Calls:** src/utils/logger.log_agent_action()
+
+**Key constants / thresholds**
+- `SHARPE_THRESHOLD = 1.0` — gate: sharpe_ratio > 1.0
+- `MAX_DRAWDOWN_THRESHOLD = 15.0` — gate: max_drawdown_pct < 15.0
+- `WIN_RATE_THRESHOLD = 40.0` — gate: win_rate_pct > 40.0
+- `MIN_TRADES_THRESHOLD = 100` — gate: total_trades >= 100 (only gate using >= not >)
+- `PROFIT_FACTOR_THRESHOLD = 1.3` — gate: profit_factor > 1.3 (handles float('inf') naturally)
+- `AGENT_NAME = "backtest_validator"` — for agent_logs
+
 ## src/execution/paper_trader.py
 
 **Purpose:** Simulated CNC swing trade execution engine with SQLite-backed orders, positions, and trades tables; GTT stop-loss and take-profit simulation without any broker API calls.
