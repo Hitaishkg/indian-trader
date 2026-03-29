@@ -24,7 +24,7 @@
 | src/strategy/regime.py | ✅ Code review passed | Spec: docs/specs/2026-03-25-regime.md |
 | src/data/fundamentals.py (historical) | ✅ Code review passed | Spec: docs/specs/2026-03-25-historical-fundamentals.md |
 | src/backtest/runner.py | ✅ Built | Spec: docs/specs/2026-03-25-backtest-runner.md. Integration: backtesting.py wrapper with _PortfolioTracker; weekly rebalance via (iso_year, iso_week) tuple; 400-day warm-up; weekend guard. |
-| src/backtest/validator.py | ⏳ Pending | |
+| src/backtest/validator.py | ⏳ Spec written, awaiting approval | Spec: docs/specs/2026-03-29-backtest-validator.md |
 
 ## Phase 3–6
 ⬜ Not started
