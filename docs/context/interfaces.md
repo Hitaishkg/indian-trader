@@ -85,6 +85,13 @@
 - `class BacktestError(Exception)` — raised on fatal backtest errors; attributes: message (str), phase (str: "data_fetch", "strategy_init", "simulation", "stats_extraction")
 - Constants: `AGENT_NAME="backtest_runner"`, `RISK_PER_TRADE=0.01`, `MAX_POSITIONS=2`, `MAX_POSITION_PCT=0.40`, `MAX_TRADE_AMOUNT=10_000.0`, `STOP_LOSS_ATR_NORMAL=2.0`, `STOP_LOSS_ATR_TIGHT=1.0`, `STOP_LOSS_MAX_PCT=0.03`, `TAKE_PROFIT_RATIO=2.0`, `ATR_PERIOD=14`, `MIN_BACKTEST_START=date(2010,1,1)`, `MAX_BACKTEST_END=date(2023,12,31)`, `LOOKBACK_CALENDAR_DAYS=400`
 
+## src/backtest/validator.py
+
+- `validate_backtest(result: BacktestResult) -> ValidationResult` — evaluates a BacktestResult against all 5 backtest gates; returns ValidationResult with per-gate breakdown; raises ValueError if result.total_trades < 0
+- `class GateResult` — frozen dataclass: gate_name (str), threshold (str), actual_value (float | int), passed (bool)
+- `class ValidationResult` — frozen dataclass: all_gates_passed (bool), gate_results (tuple[GateResult, ...] of exactly 5 in order sharpe_ratio/max_drawdown/win_rate/total_trades/profit_factor), validated_result (BacktestResult with gates_passed=True on pass, original unchanged on fail)
+- Constants: `AGENT_NAME="backtest_validator"`, `SHARPE_THRESHOLD=1.0`, `MAX_DRAWDOWN_THRESHOLD=15.0`, `WIN_RATE_THRESHOLD=40.0`, `MIN_TRADES_THRESHOLD=100`, `PROFIT_FACTOR_THRESHOLD=1.3`
+
 ## src/execution/paper_trader.py
 
 - `class PaperTrader` — simulated CNC swing trade execution engine; raises ValueError on construction if settings.live_trading is True
