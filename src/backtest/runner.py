@@ -25,6 +25,8 @@ from backtesting import Backtest, Strategy
 from src.config.settings import settings
 from src.data.fetcher import fetch_ohlcv, fetch_sector_indices
 from src.data.fundamentals import FundamentalsError, get_fundamentals_for_date, get_nifty_universe_for_year
+import pandas_ta as ta
+
 from src.indicators.technical import compute_atr_series
 from src.strategy.momentum import compute_momentum
 from src.strategy.quality_filter import apply_quality_filter
@@ -45,6 +47,8 @@ STOP_LOSS_ATR_TIGHT: float = 1.0
 STOP_LOSS_MAX_PCT: float = 0.03
 TAKE_PROFIT_RATIO: float = 2.0
 ATR_PERIOD: int = 14
+RSI_ENTRY_THRESHOLD: float = 40.0
+"""RSI must be below this value at entry bar to open a new position."""
 MIN_BACKTEST_START: datetime.date = datetime.date(2010, 1, 1)
 MAX_BACKTEST_END: datetime.date = datetime.date(2023, 12, 31)
 LOOKBACK_CALENDAR_DAYS: int = 400
@@ -601,10 +605,20 @@ class _WeeklyMomentumStrategy(Strategy):  # type: ignore[misc]
             if symbol in self.tracker.get_open_symbols():
                 continue
 
-            # Get ATR for position sizing
+            # Get per-symbol OHLCV slice for indicators
             sym_ohlcv = ohlcv_slice[ohlcv_slice["symbol"] == symbol].copy()
             if sym_ohlcv.empty or len(sym_ohlcv) < ATR_PERIOD + 1:
                 continue
+
+            # RSI entry filter: only enter if RSI(14) < 40 on the entry bar
+            rsi_series = ta.rsi(close=sym_ohlcv["close"].reset_index(drop=True), length=14)
+            if rsi_series is None or rsi_series.empty:
+                continue
+            rsi_val = float(rsi_series.iloc[-1])
+            if pd.isna(rsi_val) or rsi_val >= RSI_ENTRY_THRESHOLD:
+                continue  # not oversold — skip this entry
+
+            # Get ATR for position sizing
             try:
                 atr_series = compute_atr_series(sym_ohlcv)
             except ValueError:
