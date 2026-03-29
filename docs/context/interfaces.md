@@ -78,6 +78,13 @@
 - Constants: `ROE_THRESHOLD=0.15`, `DE_THRESHOLD=1.0`, `VOLUME_VALUE_THRESHOLD=20_000_000.0`, `PRICE_THRESHOLD=50.0`, `PROXIMITY_THRESHOLD=0.30`, `DEFAULT_LOOKBACK_DAYS=252`, `MIN_UNIVERSE_SIZE=3`, `AGENT_NAME="quality_filter"`
 - Output DataFrame columns (passing symbols only): symbol, roe, debt_to_equity, avg_daily_value, latest_price, high_52w, pct_from_52w_high, within_30pct_of_52w_high, passed_hard_filters; empty DataFrame with same schema returned when thin_universe
 
+## src/backtest/runner.py
+
+- `run_backtest(start_date: datetime.date, end_date: datetime.date, initial_cash: float = 10_000.0) -> BacktestResult` — runs full three-step strategy (quality filter -> momentum rank -> regime filter) over historical date range using backtesting.py; returns BacktestResult with gates_passed=False; raises ValueError on invalid inputs, BacktestError on data/simulation failures
+- `class BacktestResult` — frozen dataclass with fields: start_date, end_date, total_return_pct (float), annualized_return_pct (float), sharpe_ratio (float), max_drawdown_pct (float, positive), win_rate_pct (float), total_trades (int), profit_factor (float, inf if zero losses with wins, 0.0 if no wins), regime_changes (int), regime_blocked_weeks (int), raw_stats (dict), gates_passed (bool, always False)
+- `class BacktestError(Exception)` — raised on fatal backtest errors; attributes: message (str), phase (str: "data_fetch", "strategy_init", "simulation", "stats_extraction")
+- Constants: `AGENT_NAME="backtest_runner"`, `RISK_PER_TRADE=0.01`, `MAX_POSITIONS=2`, `MAX_POSITION_PCT=0.40`, `MAX_TRADE_AMOUNT=10_000.0`, `STOP_LOSS_ATR_NORMAL=2.0`, `STOP_LOSS_ATR_TIGHT=1.0`, `STOP_LOSS_MAX_PCT=0.03`, `TAKE_PROFIT_RATIO=2.0`, `ATR_PERIOD=14`, `MIN_BACKTEST_START=date(2010,1,1)`, `MAX_BACKTEST_END=date(2023,12,31)`, `LOOKBACK_CALENDAR_DAYS=400`
+
 ## src/execution/paper_trader.py
 
 - `class PaperTrader` — simulated CNC swing trade execution engine; raises ValueError on construction if settings.live_trading is True

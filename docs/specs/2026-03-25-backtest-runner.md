@@ -226,7 +226,12 @@ Step-by-step:
 9. Verify fundamentals_history has data: open SQLite connection to
    `settings.database_url`, query `SELECT COUNT(*) FROM fundamentals_history`.
    If 0, raise `BacktestError(phase="data_fetch", message="fundamentals_history table empty; call fetch_historical_fundamentals() first")`.
-10. Set class-level attributes on `_WeeklyMomentumStrategy` (see 5.4).
+10. Set class-level attributes on `_WeeklyMomentumStrategy` (see 5.4):
+    - Set `first_valid_trade_date = start_date + timedelta(days=LOOKBACK_CALENDAR_DAYS)`.
+      This is the warm-up period end. No trades open before this date.
+      For a 2010-01-01 start, first_valid_trade_date ≈ 2011-02-05.
+      Weekly rebalance steps still run during warm-up (for data alignment) but
+      position opening is blocked by the warm-up guard in `next()`.
 11. Instantiate `Backtest(data=nifty_bt_df, strategy=_WeeklyMomentumStrategy, cash=initial_cash, commission=0, exclusive_orders=False)`.
     Commission is 0 because our custom tracker handles P&L directly.
 12. Call `bt.run()`.
@@ -327,23 +332,31 @@ class _WeeklyMomentumStrategy(Strategy):
     Class-level attributes are set by run_backtest() before Backtest.run():
     """
     # Set by run_backtest() before Backtest.run()
-    ohlcv_df: ClassVar[pd.DataFrame]            # full multi-symbol OHLCV
-    nifty_ohlcv_df: ClassVar[pd.DataFrame]       # date + close only, for regime.py
+    ohlcv_df: ClassVar[pd.DataFrame]                    # full multi-symbol OHLCV
+    nifty_ohlcv_df: ClassVar[pd.DataFrame]              # date + close only, for regime.py
     universe_by_year: ClassVar[dict[int, list[str]]]
     initial_cash: ClassVar[float]
-    tracker: ClassVar[_PortfolioTracker]          # shared tracker instance
+    tracker: ClassVar[_PortfolioTracker]                # shared tracker instance
+    first_valid_trade_date: ClassVar[datetime.date]     # start_date + LOOKBACK_CALENDAR_DAYS; no trades before this
 ```
 
 **`init(self)` method:**
-- Initialize `self._last_rebalance_week: int = -1` (ISO week number tracker).
+- Initialize `self._last_rebalance_iso_key: tuple[int, int] = (-1, -1)` (tracks (iso_year, iso_week) of last rebalance).
+- Initialize `self._first_valid_trade_date: datetime.date` = class attribute `first_valid_trade_date` (set by run_backtest before Backtest.run).
 - No indicator computation here (indicators are computed on-demand per symbol).
 
 **`next(self)` method (called every trading day by backtesting.py):**
 
 ```
 current_date = self.data.index[-1].date()
-current_week = current_date.isocalendar()[1]
+
+# FIX 3: Skip Saturday/Sunday bars (NSE has occasional special Saturday sessions)
+if current_date.weekday() >= 5:
+    return
+
 current_year = current_date.year
+iso_cal = current_date.isocalendar()
+current_iso_key = (iso_cal[0], iso_cal[1])  # (iso_year, iso_week)
 
 # --- DAILY: check stop-losses and take-profits ---
 open_syms = self.tracker.get_open_symbols()
@@ -355,17 +368,24 @@ if open_syms:
 all_prices = _get_prices_for_date(self.ohlcv_df, current_date, self.tracker.get_open_symbols())
 self.tracker.update_equity(all_prices)
 
-# --- WEEKLY: rebalance on first trading day of each new ISO week ---
-if current_week == self._last_rebalance_week:
+# --- WEEKLY: rebalance on first trading day of each new ISO (year, week) pair ---
+# Uses (iso_year, iso_week) not just iso_week to handle year boundaries correctly.
+# Handles Diwali week and other multi-day holiday blocks: first bar of the week
+# triggers rebalance regardless of which day of the week it falls on.
+if current_iso_key == self._last_rebalance_iso_key:
     return
-self._last_rebalance_week = current_week
+self._last_rebalance_iso_key = current_iso_key
+
+# FIX 2: Warm-up period — no trades for first LOOKBACK_CALENDAR_DAYS from start
+if current_date < self._first_valid_trade_date:
+    return
 
 # 1. Get universe for current year
 universe = self.universe_by_year.get(current_year, [])
 if not universe:
     return
 
-# 2. Get point-in-time fundamentals for this Monday
+# 2. Get point-in-time fundamentals for this week's rebalance date
 monday_date = _find_monday(current_date)
 try:
     fundamentals_df = get_fundamentals_for_date(universe, monday_date)
@@ -793,6 +813,18 @@ Tests go in `tests/backtest/test_runner.py`. All tests use synthetic data
 
 18. **test_fundamentals_history_empty**: Mock the DB to have an empty
     fundamentals_history table. Verify `BacktestError(phase="data_fetch")` is raised.
+
+19. **test_weekend_bars_skipped**: Feed a data series that includes a Saturday bar
+    (weekday() == 5). Verify that bar triggers no rebalance and no position opens.
+
+20. **test_warmup_period_no_trades**: Set start_date such that first_valid_trade_date
+    is well after start_date. Verify no positions are opened during warm-up. Verify
+    the first position (if conditions are met) opens on or after first_valid_trade_date.
+
+21. **test_diwali_week_rebalance**: Feed a week where Monday and Tuesday are missing
+    (holiday block). Verify rebalance triggers on the first available bar of that ISO
+    week (e.g. Wednesday), not on a fixed weekday. Track (iso_year, iso_week) not
+    just iso_week.
 
 ---
 

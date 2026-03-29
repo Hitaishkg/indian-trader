@@ -23,11 +23,11 @@
 | src/strategy/momentum.py | ✅ Code review passed | Spec: docs/specs/2026-03-25-momentum.md |
 | src/strategy/regime.py | ✅ Code review passed | Spec: docs/specs/2026-03-25-regime.md |
 | src/data/fundamentals.py (historical) | ✅ Code review passed | Spec: docs/specs/2026-03-25-historical-fundamentals.md |
-| src/backtest/runner.py | 📝 Spec written, awaiting approval | Spec: docs/specs/2026-03-25-backtest-runner.md |
+| src/backtest/runner.py | ✅ Code review passed | Spec: docs/specs/2026-03-25-backtest-runner.md |
 | src/backtest/validator.py | ⬜ Not started | |
 
 ## Phase 3–6
 ⬜ Not started
 
 ## Next Action
-Build **src/backtest/runner.py** (Phase 2, step 5 of 6) — backtesting.py wrapper for strategy validation over 2010–2023 historical data.
+Build **src/backtest/validator.py** (Phase 2, step 6 of 6) — checks all 5 backtest gates (Sharpe, drawdown, win rate, trade count, profit factor) against the BacktestResult returned by runner.py.
