@@ -92,6 +92,14 @@
 - `class ValidationResult` — frozen dataclass: all_gates_passed (bool), gate_results (tuple[GateResult, ...] of exactly 5 in order sharpe_ratio/max_drawdown/win_rate/total_trades/profit_factor), validated_result (BacktestResult with gates_passed=True on pass, original unchanged on fail)
 - Constants: `AGENT_NAME="backtest_validator"`, `SHARPE_THRESHOLD=1.0`, `MAX_DRAWDOWN_THRESHOLD=15.0`, `WIN_RATE_THRESHOLD=40.0`, `MIN_TRADES_THRESHOLD=100`, `PROFIT_FACTOR_THRESHOLD=1.3`
 
+## src/agents/research_agent.py
+
+- `run_research_agent(run_date: datetime.date | None = None, symbols: list[str] | None = None) -> ResearchAgentResult` — runs Brave Search + Gemini synthesis for top-5 screener candidates; writes to research_reports table with completed_at set last; raises ResearchAgentError on DB read/write failures; Brave/Gemini failures handled gracefully per-stock
+- `class ResearchAgentError(Exception)` — raised on fatal errors; attributes: message (str), phase (str: 'db_read', 'brave_search', 'gemini', 'db_write')
+- `class StockResearch` — frozen dataclass: symbol, sentiment (str: Positive/Negative/Neutral/Mixed), confidence (float 0-1), source_urls (list[str]), earnings_transcript_unavailable (bool), completed_at (IST datetime)
+- `class ResearchAgentResult` — frozen dataclass: run_date (date), stocks_researched (int), results (list[StockResearch]), skipped_symbols (list[str]), completed_at (IST datetime)
+- Constants: `AGENT_NAME="research_agent"`, `BRAVE_NEWS_ENDPOINT`, `BRAVE_REQUEST_DELAY=1.1`, `BRAVE_TIMEOUT=10`, `BRAVE_RESULTS_COUNT=10`, `GEMINI_MODEL="gemini-2.5-flash-preview-04-17"`, `GEMINI_QUOTA_RETRY_DELAY=60`, `VALID_SENTIMENTS`, `FALLBACK_SENTIMENT="Neutral"`, `FALLBACK_CONFIDENCE=0.3`, `EARNINGS_KEYWORDS`, `EARNINGS_AGE_LIMIT_DAYS=5`, `TRANSCRIPT_MIN_CHARS=200`, `MAX_SYMBOLS=5`, `SYMBOL_TO_COMPANY`
+
 ## src/execution/paper_trader.py
 
 - `class PaperTrader` — simulated CNC swing trade execution engine; raises ValueError on construction if settings.live_trading is True

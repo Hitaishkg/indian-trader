@@ -30,7 +30,7 @@
 
 | Module | Status | Notes |
 |--------|--------|-------|
-| src/agents/research_agent.py | Spec written, awaiting approval | Spec: docs/specs/2026-03-30-research-agent.md |
+| src/agents/research_agent.py | ✅ Code review passed | Spec: docs/specs/2026-03-30-research-agent.md |
 | src/agents/signal_agent.py | ⬜ Not started | |
 | src/agents/screener_agent.py | ⬜ Not started | |
 | src/agents/watchlist_agent.py | ⬜ Not started | |
@@ -39,4 +39,4 @@
 ⬜ Not started
 
 ## Next Action
-Phase 3 started. research_agent.py spec written, awaiting approval. Once approved, Coder Agent implements src/agents/research_agent.py.
+Phase 3 in progress. research_agent.py built and code review passed. Next: src/agents/signal_agent.py.

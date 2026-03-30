@@ -17,6 +17,7 @@ dependencies = [
     "google-api-python-client>=2.0.0",
     "pandas-ta>=0.3.14b1",
     "backtesting>=0.3.3",
+    "google-genai>=1.69.0",
 ]
 
 [dependency-groups]

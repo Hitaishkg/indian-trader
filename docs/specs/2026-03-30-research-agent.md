@@ -9,7 +9,7 @@
 
 ## 1. Module Purpose
 
-The Research Agent runs every evening at 22:40 IST as part of the trading pipeline's evening session. It takes the top 5 ranked candidates from the `screener_results` table, fetches recent news for each via Brave Search API, detects earnings events, and synthesises sentiment using Google Gemini 2.5 Flash. Results are written to the `research_reports` table with the `completed_at` column set last to prevent race conditions with the downstream Watchlist Builder Agent. The module is a pure Python function -- it does not use the Python Agent SDK or Claude directly; it calls Brave Search via HTTP and Gemini via the `google-generativeai` SDK.
+The Research Agent runs every evening at 22:40 IST as part of the trading pipeline's evening session. It takes the top 5 ranked candidates from the `screener_results` table, fetches recent news for each via Brave Search API, detects earnings events, and synthesises sentiment using Google Gemini 2.5 Flash. Results are written to the `research_reports` table with the `completed_at` column set last to prevent race conditions with the downstream Watchlist Builder Agent. The module is a pure Python function -- it does not use the Python Agent SDK or Claude directly; it calls Brave Search via HTTP and Gemini via the `google-genai` SDK.
 
 ---
 
@@ -226,15 +226,15 @@ Aggregate the `description` fields of the results. If total character count > 20
 
 **SDK setup:**
 ```python
-import google.generativeai as genai
+from google import genai
+from google.genai import types as genai_types
 
-genai.configure(api_key=settings.gemini_api_key)
-model = genai.GenerativeModel("gemini-2.5-flash-preview-04-17")
+client = genai.Client(api_key=settings.gemini_api_key)
 ```
 
 The model object should be created once per `run_research_agent()` call and reused for all stocks.
 
-**System instruction** (passed via `GenerativeModel(system_instruction=...)` at model creation time):
+**System instruction** (passed via `GenerateContentConfig(system_instruction=...)`):
 
 ```
 You are a financial news analyst specialising in Indian equities. You will be given recent news articles about an NSE-listed stock. Analyse the articles and provide: 1) Overall sentiment (exactly one of: Positive, Negative, Neutral, Mixed), 2) Confidence score (float 0.0 to 1.0), 3) Source URLs list. Be conservative -- default to Neutral when uncertain. Mixed means genuinely contradictory signals. Never guess sentiment from the company name alone.
@@ -480,7 +480,7 @@ Never use bare `except:`. Always catch specific exceptions:
 - `requests.RequestException` for Brave HTTP errors
 - `json.JSONDecodeError` for JSON parsing
 - `sqlite3.Error` for DB operations
-- `google.generativeai` exceptions: catch `Exception` from `model.generate_content()` but log the specific type
+- `google.genai` exceptions: catch `Exception` from `client.models.generate_content()` but log the specific type
 
 ---
 
@@ -490,7 +490,7 @@ Never use bare `except:`. Always catch specific exceptions:
 - This module does NOT implement the Watchlist Builder logic. It only writes to `research_reports`.
 - This module does NOT send notifications (Telegram/Gmail). The orchestrator handles notifications.
 - This module does NOT create or manage the `screener_results` table. It reads from it only.
-- This module does NOT implement prompt caching via Gemini's explicit caching API (the `system_instruction` parameter on `GenerativeModel` provides implicit reuse across `generate_content` calls within the same model instance, which is sufficient for 5 calls per run).
+- Prompt caching uses `cache_control` with `type="ephemeral"` on the system instruction via `genai_types.GenerateContentConfig`. The `client` instance is created once and reused for all 5 stock calls within a run.
 - This module does NOT handle concurrent/parallel execution. Stocks are processed sequentially.
 - This module does NOT validate that Brave Search URLs are genuinely independent sources (that is a manual spot-check during Phase 5).
 
@@ -546,9 +546,9 @@ The Tester Agent must cover at minimum these 10 scenarios:
 Add one new dependency:
 
 ```toml
-"google-generativeai>=0.8.0",
+"google-genai>=1.0.0",
 ```
 
-This provides the `google.generativeai` package used for Gemini API calls. The version `>=0.8.0` ensures compatibility with the `gemini-2.5-flash-preview-04-17` model and the `system_instruction` parameter on `GenerativeModel`.
+This is the new unified Google GenAI SDK (replaces the deprecated `google-generativeai`). Version `>=1.0.0` is required for the `google.genai.Client` interface and `GenerateContentConfig` used for the `gemini-2.5-flash-preview-04-17` model. Already installed at 1.69.0.
 
 No other new dependencies required. `requests` is already present for Brave HTTP calls.
