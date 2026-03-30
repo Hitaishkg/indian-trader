@@ -26,8 +26,17 @@
 | src/backtest/runner.py | ✅ Built | Spec: docs/specs/2026-03-25-backtest-runner.md. Integration: backtesting.py wrapper with _PortfolioTracker; weekly rebalance via (iso_year, iso_week) tuple; 400-day warm-up; weekend guard. |
 | src/backtest/validator.py | ✅ Built | Spec: docs/specs/2026-03-29-backtest-validator.md. Pure gate checker; 5 gates; gates_passed=True via dataclasses.replace() only; no try/except; frozen dataclasses throughout. |
 
-## Phase 3–6
+## Phase 3 — Intelligence Layer
+
+| Module | Status | Notes |
+|--------|--------|-------|
+| src/agents/research_agent.py | Spec written, awaiting approval | Spec: docs/specs/2026-03-30-research-agent.md |
+| src/agents/signal_agent.py | ⬜ Not started | |
+| src/agents/screener_agent.py | ⬜ Not started | |
+| src/agents/watchlist_agent.py | ⬜ Not started | |
+
+## Phase 4–6
 ⬜ Not started
 
 ## Next Action
-Phase 2 complete. Validate backtest results: run_backtest() followed by validate_backtest() to confirm all 5 gates pass over 2010–2023 data. Then proceed to Phase 3: src/agents/research_agent.py.
+Phase 3 started. research_agent.py spec written, awaiting approval. Once approved, Coder Agent implements src/agents/research_agent.py.
