@@ -30,7 +30,7 @@
 
 | Module | Status | Notes |
 |--------|--------|-------|
-| src/agents/research_agent.py | ✅ Code review passed | Spec: docs/specs/2026-03-30-research-agent.md |
+| src/agents/research_agent.py | ✅ Built | Spec: docs/specs/2026-03-30-research-agent.md. Brave Search + Gemini 2.5 Flash synthesis. Two-step INSERT+UPDATE completed_at prevents race. |
 | src/agents/signal_agent.py | ⬜ Not started | |
 | src/agents/screener_agent.py | ⬜ Not started | |
 | src/agents/watchlist_agent.py | ⬜ Not started | |
@@ -39,4 +39,4 @@
 ⬜ Not started
 
 ## Next Action
-Phase 3 in progress. research_agent.py built and code review passed. Next: src/agents/signal_agent.py.
+Phase 3 in progress. research_agent.py built. Next: src/agents/signal_agent.py — Groq morning confirmation with Gemini fallback.

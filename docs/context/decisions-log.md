@@ -1,4 +1,5 @@
 # Decisions Log — Fast Reference
+[2026-03-30] research_agent.py — direct HTTP to Brave (not MCP) for testability; two-step DB write (INSERT then UPDATE completed_at) prevents Watchlist Builder race condition; google-genai>=1.0.0 (not deprecated google-generativeai)
 [2026-03-29] backtest/validator.py — gates_passed=True set only here via dataclasses.replace(); strict inequalities for all gates except total_trades (>=); float('inf') passes profit_factor gate naturally
 [2026-03-29] backtest/runner.py — uses Nifty 50 index as dummy instrument for backtesting.py (single-symbol lib); all multi-stock logic in _PortfolioTracker class. Weekly rebalance on (iso_year, iso_week) tuple not iso_week alone to handle Diwali week and multi-day holiday blocks.
 [2026-03-25] fundamentals.py (historical) — fiscal year cutoff is month >= 7 (July), NOT month >= 4 (April). Indian FY results published 2–3 months after March year-end; using April creates lookahead bias. July is the safe cutoff.

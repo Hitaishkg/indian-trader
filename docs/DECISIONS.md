@@ -7,6 +7,13 @@
 
 ---
 
+## [2026-03-30] — src/agents/research_agent.py
+
+**Built**: Evening pipeline agent: Brave Search news fetch + Gemini 2.5 Flash synthesis per top-5 screener candidates
+**Connects to**: reads screener_results table; writes research_reports table (two-step: INSERT then UPDATE completed_at); calls Brave Search API + Gemini 2.5 Flash API
+**Next step**: src/agents/signal_agent.py — Groq morning confirmation with Gemini fallback
+**Notes**: Two-step DB write (INSERT then UPDATE completed_at) prevents Watchlist Builder from reading incomplete rows. Direct HTTP to Brave (not MCP) for testability. google-genai 1.69.0 (new unified SDK, not deprecated google-generativeai). Earnings branch falls back to standard synthesis if transcript not retrievable (earnings_transcript_unavailable flag). Confidence is 0.0–1.0 per Gemini output. Source URLs always required (non-empty list).
+
 ## [2026-03-29] — src/backtest/validator.py
 
 **Built**: Pure computation gate checker; evaluates BacktestResult against 5 backtest gates from risk.md

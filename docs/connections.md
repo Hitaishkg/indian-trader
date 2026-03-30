@@ -408,6 +408,41 @@
 - Every order written to orders table BEFORE simulating execution (not after)
 - WAL mode pragmas applied at __init__ time (same as logger.py)
 
+## src/agents/research_agent.py
+
+**Purpose:** Evening pipeline agent (22:40 IST) — fetches 3 Brave Search queries per top-5 screener candidate, synthesises news sentiment via Gemini 2.5 Flash, writes results to research_reports table with race-condition-safe two-step DB write (INSERT then UPDATE completed_at).
+
+**Public API:**
+- `run_research_agent(run_date=None, symbols=None) -> ResearchAgentResult` — executes research pipeline; run_date defaults to today; symbols filters candidates (for testing); returns frozen ResearchAgentResult dataclass
+- `class StockResearch(frozen)` — symbol (str), sentiment (str in {"Positive", "Negative", "Neutral", "Mixed"}), confidence (float 0.0–1.0), source_urls (list[str]), earnings_transcript_unavailable (bool), completed_at (datetime.datetime in IST)
+- `class ResearchAgentResult(frozen)` — run_date (datetime.date), stocks_researched (int), results (list[StockResearch]), skipped_symbols (list[str]), completed_at (datetime.datetime in IST)
+- `class ResearchAgentError(Exception)` — message (str), phase (str in {"db_read", "brave_search", "gemini", "db_write"})
+
+**Reads from:**
+- screener_results table: top 5 candidates by momentum rank
+- Brave Search API: 3 queries per stock (last 48 hours), news articles + URLs
+- Gemini 2.5 Flash API: sentiment synthesis from fetched news
+
+**Writes to:**
+- research_reports table: INSERT row with symbol, sentiment, confidence, source_urls, earnings_transcript_unavailable, completed_at=NULL, then UPDATE SET completed_at=datetime.now() AFTER all fields confirmed (prevents race condition where Watchlist Builder reads incomplete rows)
+
+**Called by:**
+- evening pipeline orchestrator at 22:40 IST (Phase 3, step 1)
+
+**Calls:**
+- Brave Search API (HTTP GET with authorization header)
+- Gemini 2.5 Flash (google-genai SDK)
+- src.utils.logger.log_agent_action()
+- sqlite3 (stdlib)
+
+**Key constants / thresholds:**
+- `BRAVE_REQUEST_DELAY = 1.1` — seconds between Brave Search queries (rate limit safety)
+- `MAX_SYMBOLS = 5` — processes only top 5 from screener_results
+- `EARNINGS_LOOKBACK_DAYS = 5` — if earnings reported within last 5 days, switch to earnings transcript analysis
+- `TRANSCRIPT_MIN_CHARS = 200` — minimum length for parseable earnings transcript; if shorter or unavailable → fall back to standard news synthesis
+- `AGENT_NAME = "research_agent"` — for agent_logs
+- Sentiment values: "Positive", "Negative", "Neutral", "Mixed" (exactly as returned by Gemini)
+
 ## src/data/validator.py
 
 **Purpose:** Data quality gate — validates OHLCV and fundamentals DataFrames for corruption, coverage gaps, and time-series holes before any strategy logic runs.
