@@ -1,10 +1,10 @@
 """Research Agent for the Indian Trader evening pipeline.
 
 Runs every evening at 22:40 IST. Reads the top 5 screener candidates,
-fetches recent news for each via the Brave Search API, detects earnings
-events, and synthesises sentiment using Google Gemini 2.5 Flash. Results
-are written to the research_reports table with the completed_at column
-set last to prevent race conditions with the downstream Watchlist Builder.
+fetches recent news for each via Tavily Search, detects earnings events,
+and synthesises sentiment using Google Gemini 2.5 Flash. Results are
+written to the research_reports table with the completed_at column set
+last to prevent race conditions with the downstream Watchlist Builder.
 
 This module is a plain Python function. It does NOT use the Python Agent
 SDK or Claude API.
@@ -21,9 +21,9 @@ import time
 from dataclasses import dataclass
 from zoneinfo import ZoneInfo
 
-import requests
 from google import genai
 from google.genai import types as genai_types
+from tavily import TavilyClient
 
 from src.config.settings import settings
 from src.utils.logger import log_agent_action
@@ -40,11 +40,9 @@ IST: ZoneInfo = ZoneInfo("Asia/Kolkata")
 
 AGENT_NAME: str = "research_agent"
 
-# Brave Search API
-BRAVE_NEWS_ENDPOINT: str = "https://api.search.brave.com/res/v1/news/search"
-BRAVE_REQUEST_DELAY: float = 1.1  # seconds between requests (free tier: 1 req/s)
-BRAVE_TIMEOUT: int = 10  # seconds per HTTP request
-BRAVE_RESULTS_COUNT: int = 10  # results per query
+# Tavily Search
+TAVILY_REQUEST_DELAY: float = 0.5  # courtesy delay between Tavily calls (seconds)
+TAVILY_MAX_RESULTS: int = 10  # results per query
 
 # Gemini
 GEMINI_MODEL: str = "gemini-2.5-flash-preview-04-17"
@@ -175,7 +173,7 @@ class ResearchAgentError(Exception):
 
     Attributes:
         message: Human-readable error description.
-        phase: Which phase failed: 'db_read', 'brave_search', 'gemini', 'db_write'.
+        phase: Which phase failed: 'db_read', 'tavily_search', 'gemini', 'db_write'.
     """
 
     def __init__(self, message: str, phase: str) -> None:
@@ -183,7 +181,7 @@ class ResearchAgentError(Exception):
 
         Args:
             message: Human-readable error description.
-            phase: One of 'db_read', 'brave_search', 'gemini', 'db_write'.
+            phase: One of 'db_read', 'tavily_search', 'gemini', 'db_write'.
         """
         self.message = message
         self.phase = phase
@@ -225,7 +223,7 @@ def run_research_agent(
     """Run the research agent for the given date.
 
     Fetches screener_results for run_date (defaults to today IST),
-    runs Brave Search + Gemini synthesis for each of top 5 symbols,
+    runs Tavily Search + Gemini synthesis for each of top 5 symbols,
     writes results to research_reports table with completed_at set last.
 
     Args:
@@ -239,7 +237,7 @@ def run_research_agent(
     Raises:
         ResearchAgentError: If DB write fails (phase='db_write'),
                             or if DB read fails (phase='db_read').
-                            Brave/Gemini failures are handled gracefully
+                            Tavily/Gemini failures are handled gracefully
                             per-stock and do not raise.
     """
     if run_date is None:
@@ -251,17 +249,17 @@ def run_research_agent(
         level="INFO",
     )
 
-    # Check Brave API key before doing anything else
-    if not settings.brave_api_key:
+    # Check Tavily API key before doing anything else
+    if not settings.tavily_api_key:
         log_agent_action(
             agent_name=AGENT_NAME,
-            action="BRAVE_API_KEY not configured",
+            action="TAVILY_API_KEY not configured",
             level="ERROR",
             result="error",
         )
         raise ResearchAgentError(
-            message="BRAVE_API_KEY not configured",
-            phase="brave_search",
+            message="TAVILY_API_KEY not configured",
+            phase="tavily_search",
         )
 
     # Resolve DB path and initialise table
@@ -309,6 +307,9 @@ def run_research_agent(
     # Initialise Gemini client (created once, reused for all stocks)
     gemini_client = genai.Client(api_key=settings.gemini_api_key)
 
+    # Initialise Tavily client (created once, reused for all stocks)
+    tavily_client = TavilyClient(api_key=settings.tavily_api_key)
+
     results: list[StockResearch] = []
     skipped_symbols: list[str] = []
 
@@ -318,6 +319,7 @@ def run_research_agent(
             run_date=run_date,
             conn=conn,
             gemini_client=gemini_client,
+            tavily_client=tavily_client,
         )
         if stock_result is None:
             skipped_symbols.append(symbol)
@@ -516,124 +518,68 @@ def _update_row(
 
 
 # ---------------------------------------------------------------------------
-# Private helpers — Brave Search
+# Private helpers — Tavily Search
 # ---------------------------------------------------------------------------
 
 
-def _brave_headers() -> dict[str, str]:
-    """Return the required HTTP headers for Brave Search API requests.
-
-    Returns:
-        Dict of HTTP headers.
-    """
-    return {
-        "X-Subscription-Token": settings.brave_api_key or "",
-        "Accept": "application/json",
-        "Accept-Encoding": "gzip",
-    }
-
-
-def _brave_search(
-    query: str,
+def _fetch_tavily_news(
     symbol: str,
-    *,
-    freshness: str = "pw",
-    sleep_before: bool = True,
+    tavily_client: TavilyClient,
 ) -> list[dict]:
-    """Make a single Brave News Search request.
+    """Fetch and deduplicate news articles for a symbol via 3 Tavily queries.
 
-    Args:
-        query: The search query string.
-        symbol: NSE symbol for logging context.
-        freshness: Brave freshness parameter ('pd' = past day, 'pw' = past week).
-        sleep_before: Whether to sleep BRAVE_REQUEST_DELAY seconds before the request.
-
-    Returns:
-        List of article dicts from the Brave 'results' array. Empty list on error.
-    """
-    if sleep_before:
-        time.sleep(BRAVE_REQUEST_DELAY)
-
-    params: dict[str, str | int] = {
-        "q": query,
-        "count": BRAVE_RESULTS_COUNT,
-        "freshness": freshness,
-    }
-
-    try:
-        resp = requests.get(
-            BRAVE_NEWS_ENDPOINT,
-            headers=_brave_headers(),
-            params=params,
-            timeout=BRAVE_TIMEOUT,
-        )
-    except requests.RequestException as exc:
-        log_agent_action(
-            agent_name=AGENT_NAME,
-            action=f"brave_search failed: {exc}",
-            level="WARNING",
-            symbol=symbol,
-            result="error",
-        )
-        return []
-
-    if resp.status_code != 200:
-        log_agent_action(
-            agent_name=AGENT_NAME,
-            action=f"brave_search failed: {resp.status_code}",
-            level="WARNING",
-            symbol=symbol,
-            result="error",
-        )
-        return []
-
-    try:
-        data = resp.json()
-    except (ValueError, KeyError) as exc:
-        log_agent_action(
-            agent_name=AGENT_NAME,
-            action=f"brave_search failed: could not parse JSON: {exc}",
-            level="WARNING",
-            symbol=symbol,
-            result="error",
-        )
-        return []
-
-    articles: list[dict] = data.get("results", [])
-    log_agent_action(
-        agent_name=AGENT_NAME,
-        action=f"brave_search query={query!r} results={len(articles)}",
-        level="DEBUG",
-        symbol=symbol,
-        result="ok",
-    )
-    return articles
-
-
-def _fetch_news_articles(symbol: str) -> list[dict]:
-    """Fetch and deduplicate news articles for a symbol via 3 Brave queries.
-
-    Query 1 uses freshness='pd', queries 2 and 3 use freshness='pw'.
-    1.1-second sleep is inserted before each request.
+    Queries:
+      1. "{symbol} stock news India" -- topic="news", time_range="week"
+      2. "{symbol} NSE quarterly results earnings" -- topic="finance", time_range="week"
+      3. "{company_name} business outlook" -- topic="news", time_range="week"
 
     Args:
         symbol: NSE ticker symbol.
+        tavily_client: Reusable TavilyClient instance.
 
     Returns:
         Deduplicated list of article dicts (keyed by 'url').
+        Each dict has keys: title, url, content, score, published_date.
     """
     company_name = SYMBOL_TO_COMPANY.get(symbol, f"{symbol} company")
 
-    q1 = f"{symbol} stock news India"
-    q2 = f"{symbol} NSE earnings quarterly results"
-    q3 = f"{company_name} business outlook"
+    queries = [
+        (f"{symbol} stock news India", "news"),
+        (f"{symbol} NSE quarterly results earnings", "finance"),
+        (f"{company_name} business outlook", "news"),
+    ]
 
-    # First query: sleep before (consistent with all requests)
-    articles1 = _brave_search(q1, symbol, freshness="pd", sleep_before=True)
-    articles2 = _brave_search(q2, symbol, freshness="pw", sleep_before=True)
-    articles3 = _brave_search(q3, symbol, freshness="pw", sleep_before=True)
+    all_articles: list[dict] = []
 
-    all_articles = articles1 + articles2 + articles3
+    for query, topic in queries:
+        time.sleep(TAVILY_REQUEST_DELAY)
+        try:
+            results = tavily_client.search(
+                query=query,
+                topic=topic,
+                time_range="week",
+                max_results=TAVILY_MAX_RESULTS,
+                include_answer=False,
+                search_depth="basic",
+            )
+            articles = results.get("results", [])
+            log_agent_action(
+                agent_name=AGENT_NAME,
+                action=f"tavily_search query={query!r} results={len(articles)}",
+                level="DEBUG",
+                symbol=symbol,
+                result="ok",
+            )
+            all_articles.extend(articles)
+        except Exception as exc:
+            log_agent_action(
+                agent_name=AGENT_NAME,
+                action=f"tavily_search failed: {exc}",
+                level="WARNING",
+                symbol=symbol,
+                result="error",
+            )
+            # Continue with empty results for this query
 
     # Deduplicate by URL
     seen_urls: set[str] = set()
@@ -647,73 +593,43 @@ def _fetch_news_articles(symbol: str) -> list[dict]:
     return unique_articles
 
 
-def _parse_age_to_days(age_str: str) -> float | None:
-    """Parse a Brave 'age' string into a number of days.
-
-    Args:
-        age_str: Human-readable age string, e.g. '2 hours ago', '3 days ago',
-                 '1 week ago'.
-
-    Returns:
-        Estimated age in days as a float, or None if parsing fails.
-        'hour'/'minute' strings return 0.1 (well within 5 days).
-        'week' strings return 7.0 per week.
-    """
-    age_lower = age_str.lower()
-
-    if "minute" in age_lower or "hour" in age_lower:
-        return 0.1
-
-    if "day" in age_lower:
-        match = re.search(r"(\d+)", age_lower)
-        if match:
-            return float(match.group(1))
-        return None
-
-    if "week" in age_lower:
-        match = re.search(r"(\d+)", age_lower)
-        if match:
-            return float(match.group(1)) * 7.0
-        return 7.0
-
-    return None
-
-
-def _is_within_days(age_str: str, max_days: int) -> bool:
-    """Return True if the article age string represents <= max_days days.
-
-    Args:
-        age_str: Brave 'age' field string.
-        max_days: Maximum number of days (inclusive).
-
-    Returns:
-        True if within range, False otherwise (including unparseable strings).
-    """
-    days = _parse_age_to_days(age_str)
-    if days is None:
-        return False
-    return days <= max_days
-
-
 def _detect_earnings(articles: list[dict]) -> bool:
     """Scan articles for earnings keywords in recent articles (within 5 days).
 
+    Uses published_date (ISO date string from Tavily) instead of age strings.
+    Articles with missing or unparseable published_date are treated as not recent.
+
     Args:
-        articles: List of article dicts from Brave, each with 'title',
-                  'description', and 'age' fields.
+        articles: List of article dicts from Tavily, each with 'title',
+                  'content', and 'published_date' fields.
 
     Returns:
-        True if at least one article within 5 days contains an earnings keyword.
+        True if at least one article within EARNINGS_AGE_LIMIT_DAYS days
+        contains an earnings keyword.
     """
+    today = datetime.date.today()
+
     for article in articles:
         title = article.get("title", "") or ""
-        description = article.get("description", "") or ""
-        age_str = article.get("age", "") or ""
+        content = article.get("content", "") or ""
+        published_date_str = article.get("published_date", "") or ""
 
-        if not _is_within_days(age_str, EARNINGS_AGE_LIMIT_DAYS):
+        # Parse published_date
+        if not published_date_str:
             continue
 
-        combined_text = (title + " " + description).lower()
+        try:
+            pub_date = datetime.datetime.strptime(
+                published_date_str[:10], "%Y-%m-%d"
+            ).date()
+        except (ValueError, TypeError):
+            continue
+
+        age_days = (today - pub_date).days
+        if age_days > EARNINGS_AGE_LIMIT_DAYS:
+            continue
+
+        combined_text = (title + " " + content).lower()
         for keyword in EARNINGS_KEYWORDS:
             if keyword.lower() in combined_text:
                 return True
@@ -721,19 +637,43 @@ def _detect_earnings(articles: list[dict]) -> bool:
     return False
 
 
-def _fetch_transcript(symbol: str) -> str:
-    """Fetch earnings transcript content via a 4th Brave query.
+def _fetch_transcript(
+    symbol: str,
+    tavily_client: TavilyClient,
+) -> str:
+    """Fetch earnings transcript content via a 4th Tavily query.
 
     Args:
         symbol: NSE ticker symbol.
+        tavily_client: Reusable TavilyClient instance.
 
     Returns:
-        Concatenated description text from transcript search results.
+        Concatenated content text from transcript search results.
     """
+    time.sleep(TAVILY_REQUEST_DELAY)
     query = f"{symbol} earnings call transcript analyst"
-    articles = _brave_search(query, symbol, freshness="pw", sleep_before=True)
-    descriptions = [article.get("description", "") or "" for article in articles]
-    return " ".join(descriptions)
+    try:
+        results = tavily_client.search(
+            query=query,
+            topic="finance",
+            time_range="week",
+            max_results=TAVILY_MAX_RESULTS,
+            include_answer=False,
+            search_depth="basic",
+        )
+        articles = results.get("results", [])
+    except Exception as exc:
+        log_agent_action(
+            agent_name=AGENT_NAME,
+            action=f"tavily_transcript_search failed: {exc}",
+            level="WARNING",
+            symbol=symbol,
+            result="error",
+        )
+        return ""
+
+    contents = [article.get("content", "") or "" for article in articles]
+    return " ".join(contents)
 
 
 # ---------------------------------------------------------------------------
@@ -745,7 +685,7 @@ def _format_articles_for_prompt(articles: list[dict]) -> str:
     """Format a list of article dicts into a string for the Gemini prompt.
 
     Args:
-        articles: List of article dicts with 'title', 'url', 'description' keys.
+        articles: List of article dicts with 'title', 'url', 'content' keys.
 
     Returns:
         Formatted multi-line string, or 'No recent news articles found.' if empty.
@@ -757,8 +697,8 @@ def _format_articles_for_prompt(articles: list[dict]) -> str:
     for article in articles:
         title = article.get("title", "") or ""
         url = article.get("url", "") or ""
-        description = article.get("description", "") or ""
-        lines.append(f"Title: {title}\nSource: {url}\nSummary: {description}\n---")
+        content = article.get("content", "") or ""
+        lines.append(f"Title: {title}\nSource: {url}\nSummary: {content}\n---")
 
     return "\n".join(lines)
 
@@ -963,10 +903,11 @@ def _research_one_stock(
     run_date: datetime.date,
     conn: sqlite3.Connection,
     gemini_client: genai.Client,
+    tavily_client: TavilyClient,
 ) -> StockResearch | None:
     """Run the full research pipeline for one stock.
 
-    Inserts a placeholder DB row first, performs all Brave + Gemini work,
+    Inserts a placeholder DB row first, performs all Tavily + Gemini work,
     then updates the row with results and sets completed_at last.
 
     Args:
@@ -974,6 +915,7 @@ def _research_one_stock(
         run_date: The research run date.
         conn: An open sqlite3.Connection.
         gemini_client: Reusable Gemini client instance.
+        tavily_client: Reusable TavilyClient instance.
 
     Returns:
         StockResearch on success, None if Gemini failed fatally (stock skipped).
@@ -1000,8 +942,8 @@ def _research_one_stock(
         result="ok",
     )
 
-    # Step 2: Fetch news articles (3 Brave queries)
-    articles = _fetch_news_articles(symbol)
+    # Step 2: Fetch news articles (3 Tavily queries)
+    articles = _fetch_tavily_news(symbol, tavily_client)
 
     # Step 3: Earnings detection
     earnings_detected = _detect_earnings(articles)
@@ -1017,14 +959,14 @@ def _research_one_stock(
             result="ok",
         )
         # Step 3a: Attempt transcript fetch
-        transcript_text = _fetch_transcript(symbol)
+        transcript_text = _fetch_transcript(symbol, tavily_client)
         if len(transcript_text) > TRANSCRIPT_MIN_CHARS:
             # Use transcript content as synthetic articles for Gemini
             transcript_article = {
                 "title": f"{symbol} Earnings Call Transcript",
                 "url": "",
-                "description": transcript_text,
-                "age": "1 day ago",
+                "content": transcript_text,
+                "published_date": datetime.date.today().isoformat(),
             }
             synthesis_articles = [transcript_article]
         else:

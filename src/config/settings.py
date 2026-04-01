@@ -30,6 +30,7 @@ _SECRET_FIELDS: frozenset[str] = frozenset(
         "gemini_api_key",
         "github_pat",
         "brave_api_key",
+        "tavily_api_key",
         "telegram_bot_token",
         "telegram_chat_id",
         "gmail_credentials",
@@ -93,6 +94,7 @@ class Settings:
     gemini_api_key: str
     github_pat: str
     brave_api_key: str | None  # phase-gated: None until Phase 3
+    tavily_api_key: str | None  # phase-gated: None until Phase 3
 
     # --- Notification ---
     telegram_bot_token: str
@@ -277,6 +279,7 @@ def load_settings(env_path: str | None = None) -> Settings:
     shoonya_totp_secret = _phase_gated("SHOONYA_TOTP_SECRET")
     fyers_api_key = _phase_gated("FYERS_API_KEY")
     brave_api_key = _phase_gated("BRAVE_API_KEY")
+    tavily_api_key = _phase_gated("TAVILY_API_KEY")
     gmail_credentials = _phase_gated("GMAIL_CREDENTIALS")
 
     # -----------------------------------------------------------------------
@@ -307,6 +310,7 @@ def load_settings(env_path: str | None = None) -> Settings:
         gemini_api_key=gemini_api_key,
         github_pat=github_pat,
         brave_api_key=brave_api_key,
+        tavily_api_key=tavily_api_key,
         telegram_bot_token=telegram_bot_token,
         telegram_chat_id=telegram_chat_id,
         gmail_credentials=gmail_credentials,
