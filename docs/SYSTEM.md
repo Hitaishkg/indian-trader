@@ -35,7 +35,7 @@ Zero delivery brokerage. CNC orders with GTT stop-losses.
 | src/strategy/regime.py | Nifty 50 200 DMA filter | 2 | ✅ Built |
 | src/backtest/runner.py | backtesting.py wrapper | 2 | ✅ Built |
 | src/backtest/validator.py | Backtest performance gate checks | 2 | ✅ Built |
-| src/agents/research_agent.py | Brave Search + Gemini news synthesis | 3 | ✅ Built |
+| src/agents/research_agent.py | Tavily Search + Gemini news synthesis | 3 | ✅ Built |
 | src/agents/signal_agent.py | Groq morning confirmation | 3 | ⏳ Pending |
 | src/agents/screener_agent.py | 3-step stock selection pipeline | 3 | ⏳ Pending |
 | src/agents/watchlist_agent.py | Final watchlist builder (Opus) | 3 | ⏳ Pending |
@@ -59,7 +59,7 @@ EVENING (22:00 IST)
        ↓
   Screener Agent → screener_results (DB)
        ↓
-  Research Agent → Brave Search → Gemini 2.5 Flash → research_reports (DB, two-step: INSERT + UPDATE completed_at)
+  Research Agent → Tavily Search → Gemini 2.5 Flash → research_reports (DB, two-step: INSERT + UPDATE completed_at)
        ↓
   Watchlist Builder → watchlist (DB) → Telegram + Email notification
 

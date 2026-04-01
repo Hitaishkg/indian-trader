@@ -7,6 +7,13 @@
 
 ---
 
+## [2026-04-01] — research_agent.py Tavily migration
+
+**Built**: Switched news source from Brave Search to Tavily SDK
+**Connects to**: reads screener_results table, writes research_reports table (same two-step INSERT+UPDATE pattern); calls Tavily Search API + Gemini 2.5 Flash API
+**Next step**: src/agents/signal_agent.py — Groq morning confirmation
+**Notes**: NewsData.io rejected due to 12-hour free-tier article delay (earnings announcements post-15:30 IST would be missed). Tavily: real-time news, topic=news/finance, published_date per result as ISO 8601 string. Earnings detection now parses published_date instead of fragile age-string heuristics. TAVILY_REQUEST_DELAY=0.5s (was BRAVE_REQUEST_DELAY=1.1s).
+
 ## [2026-03-30] — src/agents/research_agent.py
 
 **Built**: Evening pipeline agent: Brave Search news fetch + Gemini 2.5 Flash synthesis per top-5 screener candidates
