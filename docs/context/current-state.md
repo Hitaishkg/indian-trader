@@ -31,7 +31,7 @@
 | Module | Status | Notes |
 |--------|--------|-------|
 | src/agents/research_agent.py | ✅ Code review passed (Tavily migration) | Spec: docs/specs/2026-03-30-research-agent.md. Migration spec: docs/specs/2026-04-01-research-agent-tavily.md. Tavily SDK replaces Brave Search; `result["content"]` used; error phase strings updated to "tavily_search"; no leftover Brave constants; two-step INSERT+UPDATE completed_at preserved. |
-| src/agents/signal_agent.py | ⬜ Not started | |
+| src/agents/signal_agent.py | 📝 Spec written, awaiting approval | Spec: docs/specs/2026-04-05-signal-agent.md |
 | src/agents/screener_agent.py | ⬜ Not started | |
 | src/agents/watchlist_agent.py | ⬜ Not started | |
 
@@ -39,4 +39,4 @@
 ⬜ Not started
 
 ## Next Action
-Phase 3 in progress. research_agent.py built. Next: src/agents/signal_agent.py — Groq morning confirmation with Gemini fallback.
+Phase 3 in progress. research_agent.py built. signal_agent.py spec written — awaiting approval before Coder Agent starts.
