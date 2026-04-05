@@ -7,6 +7,14 @@
 
 ---
 
+## [2026-04-05] — src/agents/screener_agent.py
+**Built**: 3-step weekly stock selection pipeline (quality filter → momentum → regime). Writes top 5 ranked candidates to screener_results table. Standalone-callable for Phase 4 emergency rescreens.
+**Connects to**: reads fetch_ohlcv/fetch_sector_indices/fundamentals (no DB reads); writes screener_results table; calls apply_quality_filter, compute_momentum, apply_regime_filter
+**Next step**: src/agents/watchlist_agent.py (Phase 3, Step 4) — reads screener_results + research_reports, applies combined decision rule, produces final watchlist
+**Notes**: regime_blocked (BELOW_200DMA_10DAYS) still writes top5 with position_size_multiplier=0.0 — Watchlist Builder decides; screener_agent does not suppress. thin_universe (< 3 pass quality) returns early with empty top5 and send_alert. INSERT OR REPLACE on UNIQUE(symbol, run_date) — most recent run always authoritative.
+
+---
+
 ## [2026-04-05] — Intraweek emergency rescreen (design decision)
 **Decision**: Add intraweek emergency rescreen trigger to Phase 4 monitor_agent.py
 **Detail**: monitor_agent checks Nifty 50 close-to-close daily at 15:35 IST. If drop > 3% → re-run full screener_agent pipeline immediately, update screener_results table, send Telegram alert: "Emergency rescreen triggered: Nifty dropped X% today. Watchlist updated." Open positions are NOT automatically closed — existing GTT stop-losses handle position protection. Monday rescreen still runs regardless of how many intraday rescreens happened that week. Threshold is close-vs-prev-close only (not intraday high-low range).

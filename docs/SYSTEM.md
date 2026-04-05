@@ -37,7 +37,7 @@ Zero delivery brokerage. CNC orders with GTT stop-losses.
 | src/backtest/validator.py | Backtest performance gate checks | 2 | ✅ Built |
 | src/agents/research_agent.py | Tavily Search + Gemini news synthesis | 3 | ✅ Built |
 | src/agents/signal_agent.py | Groq morning confirmation + Gemini fallback | 3 | ✅ Built |
-| src/agents/screener_agent.py | 3-step stock selection pipeline | 3 | ⏳ Pending |
+| src/agents/screener_agent.py | 3-step stock selection pipeline | 3 | ✅ Built |
 | src/agents/watchlist_agent.py | Final watchlist builder (Opus) | 3 | ⏳ Pending |
 | src/execution/auth.py | Shoonya TOTP auto-login | 4 | ⏳ Pending |
 | src/execution/shoonya_broker.py | Shoonya order placement and GTT | 4 | ⏳ Pending |
@@ -115,6 +115,7 @@ WAL mode pragmas applied at every connection open.
 | Regime filter active | `agent_logs WHERE event_type='regime_check'` |
 | Screener.in fallback active | `agent_logs WHERE event_type='screener_fallback'` |
 | Stale fundamentals data | `agent_logs WHERE event_type='fundamentals_stale'` |
+| Screener thin_universe | Fewer than 3 stocks passed quality filter; check fundamentals data freshness and ROE/D-E thresholds; log reason as `agent_logs WHERE action LIKE '%thin_universe%'` |
 | Safe mode activated | `agent_logs WHERE event_type='safe_mode'` |
 | Signal agent late start | `agent_logs WHERE action LIKE '%late_start%' AND agent_name='signal_agent'` |
 | Groq low confidence (BUY downgraded to HOLD) | `signals WHERE groq_confidence < 0.6 AND groq_confidence >= 0` |

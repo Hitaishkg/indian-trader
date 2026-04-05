@@ -408,6 +408,52 @@
 - Every order written to orders table BEFORE simulating execution (not after)
 - WAL mode pragmas applied at __init__ time (same as logger.py)
 
+## src/agents/screener_agent.py
+
+**Purpose:** Runs the 3-step weekly selection pipeline (quality filter → momentum ranking → regime filter). Writes top 5 candidates to screener_results table. Runs every Monday at 22:00 IST; also callable standalone for Phase 4 emergency rescreens.
+
+**Public API:**
+- `run_screener_agent(run_date=None) -> ScreenerAgentResult` — executes full screener pipeline; run_date defaults to today; returns frozen ScreenerAgentResult dataclass; raises ScreenerAgentError on fatal errors
+- `class ScreenerResult(frozen)` — symbol (str), rank (int, 1=highest), momentum_score (float), quality_passed (bool), regime (str in {"ABOVE_200DMA", "BELOW_200DMA", "BELOW_200DMA_10DAYS"}), position_size_multiplier (float in {1.0, 0.5, 0.0}), screened_at (datetime.datetime in IST), run_date (datetime.date)
+- `class ScreenerAgentResult(frozen)` — run_date (datetime.date), symbols_screened (int, total Nifty 50 universe size), symbols_passed_quality (int), top5 (list[ScreenerResult], empty when thin_universe or regime_blocked), thin_universe (bool), regime_blocked (bool), completed_at (datetime.datetime in IST)
+- `class ScreenerAgentError(Exception)` — message (str), phase (str in {"db_write", "ohlcv_fetch", "fundamentals_fetch", "quality_filter", "momentum", "regime"})
+
+**Reads from:**
+- fetch_ohlcv(): 400-day lookback OHLCV for all Nifty 50 symbols
+- fetch_sector_indices(): Nifty 50 index OHLCV for regime filter 200 DMA
+- get_nifty_universe_for_year() / fetch_nifty50_symbols() fallback: complete Nifty 50 constituent list
+- get_fundamentals_for_date(): ROE, D/E, EPS, volume, price (no DB reads)
+
+**Writes to:**
+- screener_results table: INSERT OR REPLACE on UNIQUE(symbol, run_date); one row per top-5 candidate. regime_blocked and thin_universe still write top5 with position_size_multiplier=0.0 (Watchlist Builder decides whether to trade)
+
+**Called by:**
+- orchestrator.py at 22:00 IST every Monday (Phase 3 evening pipeline)
+- monitor_agent.py for Phase 4 emergency intraweek rescreen (if Nifty drops > 3% close-to-close)
+
+**Calls:**
+- apply_quality_filter() → returns quality-filtered universe or empty set if thin_universe
+- compute_momentum() → ranks top N by 12-1 momentum score
+- apply_regime_filter() → applies Nifty 200 DMA regime, adds position_size_multiplier
+- fetch_ohlcv() → 400-day OHLCV
+- fetch_sector_indices() → Nifty 50 for regime check
+- get_nifty_universe_for_year() / fetch_nifty50_symbols() → universe size
+- get_fundamentals_for_date() → fundamentals
+- log_agent_action() → agent_logs
+- send_info() → info-level notifications
+- send_alert() → alert-level notifications (on thin_universe)
+
+**Key constants / thresholds:**
+- `OHLCV_LOOKBACK_DAYS = 400` — calendar days of price history required
+- `MIN_UNIVERSE_SIZE = 3` — minimum stocks that must pass quality filter; if fewer → thin_universe=True, empty top5, send_alert()
+- `MAX_TOP_N = 5` — top 5 momentum-ranked candidates written to screener_results
+- `AGENT_NAME = "screener_agent"` — for agent_logs
+- thin_universe: when fewer than 3 stocks pass all 5 quality filters; system returns early with empty top5 and sends alert
+- regime_blocked: when BELOW_200DMA_10DAYS (10+ consecutive days below 200 DMA); position_size_multiplier=0.0, but top5 still written so Watchlist Builder can assess market state
+- INSERT OR REPLACE on UNIQUE(symbol, run_date): emergency rescreen on same date overwrites Monday run; most recent run is always authoritative
+
+---
+
 ## src/agents/research_agent.py
 
 **Purpose:** Evening pipeline agent (22:40 IST) — fetches news via Tavily Search API for top-5 screener candidates, synthesises sentiment via Gemini 2.5 Flash, writes results to research_reports table with race-condition-safe two-step DB write (INSERT then UPDATE completed_at).
