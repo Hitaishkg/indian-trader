@@ -7,6 +7,14 @@
 
 ---
 
+## [2026-04-05] — Intraweek emergency rescreen (design decision)
+**Decision**: Add intraweek emergency rescreen trigger to Phase 4 monitor_agent.py
+**Detail**: monitor_agent checks Nifty 50 close-to-close daily at 15:35 IST. If drop > 3% → re-run full screener_agent pipeline immediately, update screener_results table, send Telegram alert: "Emergency rescreen triggered: Nifty dropped X% today. Watchlist updated." Open positions are NOT automatically closed — existing GTT stop-losses handle position protection. Monday rescreen still runs regardless of how many intraday rescreens happened that week. Threshold is close-vs-prev-close only (not intraday high-low range).
+**Implementation notes**: Phase 4 feature (monitor_agent.py). screener_agent must be callable standalone (not only from the scheduled evening pipeline). Flag monitor_agent as a known caller in screener_agent spec.
+**Next step**: src/agents/screener_agent.py (Phase 3, Step 3) — build with standalone callable design
+
+---
+
 ## [2026-04-05] — signal_agent.py
 **Built**: Morning signal confirmation agent reading screener_results, computing RSI/MACD/Bollinger/ATR, applying combined decision rule, Groq advisory LLM check.
 **Connects to**: reads screener_results + research_reports; writes signals table; calls fetch_ohlcv, add_indicators, Groq API (requests.post), Gemini fallback (google-genai SDK)

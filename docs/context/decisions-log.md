@@ -1,4 +1,5 @@
 # Decisions Log — Fast Reference
+[2026-04-05] intraweek emergency rescreen: monitor_agent checks Nifty 50 close-to-close daily at 15:35 IST; if drop > 3% → re-run full screener_agent pipeline immediately, update screener_results, send Telegram alert. Open positions NOT closed — existing GTT stops handle protection. Monday rescreen still runs regardless. Threshold is close-vs-prev-close only (not intraday high-low). Phase 4 feature; screener_agent must be callable standalone. Flag monitor_agent as a caller in screener_agent spec.
 [2026-04-05] signal_agent.py: Groq advisory-only; both-LLM failure keeps rule-based BUY (groq_confidence=-1.0 sentinel); requests.post() used directly (no groq SDK)
 [2026-04-01] research_agent.py — switched Brave→Tavily; NewsData.io rejected (12h free-tier delay); Tavily published_date ISO string replaces Brave age-string heuristics for earnings detection
 [2026-03-30] research_agent.py — direct HTTP to Brave (not MCP) for testability; two-step DB write (INSERT then UPDATE completed_at) prevents Watchlist Builder race condition; google-genai>=1.0.0 (not deprecated google-generativeai)
