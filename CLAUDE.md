@@ -51,7 +51,7 @@ cp .env.example .env
 3. Review spec — approve or reject in writing before any code is written
 4. Build pipeline: architect → coder → tester → debugger → code-reviewer → github-agent
 5. Update docs/DECISIONS.md with what was built and why
-
+6. Docs Agent updates docs/context/ after every completed module
 ---
 
 ## Rules files (loaded automatically)

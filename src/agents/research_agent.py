@@ -37,25 +37,47 @@ IST: ZoneInfo = ZoneInfo("Asia/Kolkata")
 # ---------------------------------------------------------------------------
 # Module-level constants
 # ---------------------------------------------------------------------------
-
 AGENT_NAME: str = "research_agent"
 
 # Tavily Search
 TAVILY_REQUEST_DELAY: float = 0.5  # courtesy delay between Tavily calls (seconds)
 TAVILY_MAX_RESULTS: int = 10  # results per query
 
+# Quality Indian financial news sources — narrows Tavily results away from
+# stock-data pages (Yahoo Finance quote pages, NSE data pages) and toward
+# genuine editorial news. Used as include_domains on all news queries.
+TAVILY_INCLUDE_DOMAINS: list[str] = [
+    "economictimes.indiatimes.com",
+    "moneycontrol.com",
+    "business-standard.com",
+    "livemint.com",
+    "financialexpress.com",
+    "reuters.com",
+    "bloomberg.com",
+]
+
 # Gemini
-GEMINI_MODEL: str = "gemini-2.5-flash-preview-04-17"
+GEMINI_MODEL: str = "gemini-2.5-flash"
+print("Using model:", GEMINI_MODEL)
 GEMINI_QUOTA_RETRY_DELAY: int = 60  # seconds to wait on 429
 
 # Sentiment
-VALID_SENTIMENTS: frozenset[str] = frozenset({"Positive", "Negative", "Neutral", "Mixed"})
+VALID_SENTIMENTS: frozenset[str] = frozenset(
+    {"Positive", "Negative", "Neutral", "Mixed"}
+)
 FALLBACK_SENTIMENT: str = "Neutral"
 FALLBACK_CONFIDENCE: float = 0.3
 
 # Earnings detection
 EARNINGS_KEYWORDS: list[str] = [
-    "Q1", "Q2", "Q3", "Q4", "quarterly", "results", "earnings", "profit"
+    "Q1",
+    "Q2",
+    "Q3",
+    "Q4",
+    "quarterly",
+    "results",
+    "earnings",
+    "profit",
 ]
 EARNINGS_AGE_LIMIT_DAYS: int = 5
 TRANSCRIPT_MIN_CHARS: int = 200
@@ -358,7 +380,7 @@ def _resolve_db_path() -> str:
     """
     url = settings.database_url
     if url.startswith("sqlite:///"):
-        remainder = url[len("sqlite:///"):]
+        remainder = url[len("sqlite:///") :]
     else:
         remainder = url
 
@@ -561,6 +583,7 @@ def _fetch_tavily_news(
                 max_results=TAVILY_MAX_RESULTS,
                 include_answer=False,
                 search_depth="basic",
+                include_domains=TAVILY_INCLUDE_DOMAINS,
             )
             articles = results.get("results", [])
             log_agent_action(
