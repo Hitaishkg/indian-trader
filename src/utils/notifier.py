@@ -323,8 +323,9 @@ def _build_gmail_service() -> Any | None:
     """Build and return a Gmail API service object, handling OAuth token management.
 
     Returns the cached service on subsequent calls without re-reading token.json.
-    Runs the OAuth flow on the first call when no token.json exists. Returns
-    None if the service could not be built. Never raises.
+    If no valid token.json exists or the token cannot be refreshed, returns None
+    and logs a WARNING — never launches a browser OAuth flow. Call
+    notifier_setup.py once interactively to create the initial token. Never raises.
 
     Returns:
         A googleapiclient.discovery.Resource for the Gmail API, or None.
@@ -337,7 +338,6 @@ def _build_gmail_service() -> Any | None:
     # Lazy imports -- only here, never at module level
     from google.auth.transport.requests import Request as GoogleAuthRequest
     from google.oauth2.credentials import Credentials
-    from google_auth_oauthlib.flow import InstalledAppFlow
     from googleapiclient.discovery import build
 
     token_path = os.path.join(_PROJECT_ROOT, _TOKEN_FILE)
@@ -369,29 +369,16 @@ def _build_gmail_service() -> Any | None:
                     creds = None
 
             if creds is None:
-                credentials_path = settings.gmail_credentials
-                if not credentials_path or not os.path.isfile(credentials_path):
-                    log_agent_action(
-                        agent_name=_AGENT_NAME,
-                        action=f"Gmail OAuth credentials file not found: {credentials_path}",
-                        level="ERROR",
-                        result="error",
-                    )
-                    return None
-
-                try:
-                    flow = InstalledAppFlow.from_client_secrets_file(
-                        credentials_path, _GMAIL_SCOPES
-                    )
-                    creds = flow.run_local_server(port=0)
-                except Exception as exc:
-                    log_agent_action(
-                        agent_name=_AGENT_NAME,
-                        action=f"Gmail OAuth flow failed: {exc}",
-                        level="ERROR",
-                        result="error",
-                    )
-                    return None
+                # No valid token — interactive browser flow is required but
+                # this process may be headless/automated. Never launch the
+                # browser flow; fail gracefully so Telegram can continue.
+                log_agent_action(
+                    agent_name=_AGENT_NAME,
+                    action="gmail_auth_required: run notifier_setup.py to authenticate",
+                    level="WARNING",
+                    result="skipped",
+                )
+                return None
 
         # Persist the credentials to token.json
         try:
