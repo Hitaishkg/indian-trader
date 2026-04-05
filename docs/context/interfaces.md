@@ -92,6 +92,15 @@
 - `class ValidationResult` — frozen dataclass: all_gates_passed (bool), gate_results (tuple[GateResult, ...] of exactly 5 in order sharpe_ratio/max_drawdown/win_rate/total_trades/profit_factor), validated_result (BacktestResult with gates_passed=True on pass, original unchanged on fail)
 - Constants: `AGENT_NAME="backtest_validator"`, `SHARPE_THRESHOLD=1.0`, `MAX_DRAWDOWN_THRESHOLD=15.0`, `WIN_RATE_THRESHOLD=40.0`, `MIN_TRADES_THRESHOLD=100`, `PROFIT_FACTOR_THRESHOLD=1.3`
 
+## src/agents/signal_agent.py
+
+- `run_signal_agent(run_date: datetime.date | None = None, symbols: list[str] | None = None) -> SignalAgentResult` — reads top screener candidates, computes RSI/MACD/BB/ATR on fresh 60-day OHLCV, applies combined decision rule (technical + sentiment + Groq), writes all signals (BUY and HOLD) to signals table; returns empty result with late_start=True if called after 08:50 IST
+- `class SignalAgentError(Exception)` — raised on fatal errors; attributes: message (str), phase (str: 'db_read', 'ohlcv_fetch', 'db_write')
+- `class StockSignal` — frozen dataclass: symbol, rsi (float), macd_signal (str: BUY/HOLD), bollinger_position (str: ABOVE/MIDDLE/BELOW), atr (float), groq_confidence (float 0-1, or -1.0 sentinel when LLM unavailable), signal_type (str: BUY/HOLD), skip_reason (str | None), signalled_at (IST datetime)
+- `class SignalAgentResult` — frozen dataclass: run_date (date), symbols_processed (int), buy_signals (list[StockSignal]), hold_signals (list[StockSignal]), late_start (bool), completed_at (IST datetime)
+- Constants: `AGENT_NAME="signal_agent"`, `DEADLINE_HOUR=8`, `DEADLINE_MINUTE=50`, `RSI_BUY_THRESHOLD=40.0`, `OHLCV_LOOKBACK_DAYS=60`, `GROQ_MODEL="llama-3.3-70b-versatile"`, `GROQ_API_ENDPOINT`, `GROQ_TIMEOUT_SECONDS=15`, `GROQ_CONFIDENCE_THRESHOLD=0.6`, `GEMINI_MODEL="gemini-2.5-flash"`, `LLM_UNAVAILABLE_SENTINEL=-1.0`, `MAX_SYMBOLS=5`, `VALID_SIGNAL_TYPES`, `VALID_BOLLINGER_POSITIONS`, `VALID_MACD_SIGNALS`
+- Decision rule: technical BUY fires when rsi < 40.0 AND macd_hist > 0; blocked if sentiment="Negative"; Groq advisory check applied (confidence < 0.6 → downgrade to HOLD); both LLMs failing → keep rule-based BUY with groq_confidence=-1.0
+
 ## src/agents/research_agent.py
 
 - `run_research_agent(run_date: datetime.date | None = None, symbols: list[str] | None = None) -> ResearchAgentResult` — runs Tavily Search + Gemini synthesis for top-5 screener candidates; writes to research_reports table with completed_at set last; raises ResearchAgentError on DB read/write failures; Tavily/Gemini failures handled gracefully per-stock

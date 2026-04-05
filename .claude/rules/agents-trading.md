@@ -83,7 +83,8 @@ to trade. All other agents execute rules, apply math, or call external LLMs.
   Confidence score 0-1?"
 - If Groq confidence < 0.6 → stock removed from today's trades, logged
 - If Groq fails or rate-limits → Gemini 2.5 Flash fallback (same prompt)
-- If both fail → skip all trades today, alert immediately
+- If both fail → keep rule-based decision, set groq_confidence=-1.0, do NOT block the trade
+  (Override: LLM is advisory only. Original "skip all trades" behavior removed 2026-04-05.)
 - Hard deadline: MUST complete by 08:50. If pipeline not ready by 08:50
   → safe mode: no new positions, monitor existing positions with rules only
 - Writes to: signals table
