@@ -246,63 +246,53 @@ def run_signal_agent(
             result="fallback",
         )
 
-    # Resolve DB path and initialise table
+    # --- READ PHASE: open connection, read, close immediately ---
+    # Connection is closed before OHLCV fetch and LLM calls to avoid
+    # holding a write lock while SQLiteHandler logs to agent_logs.
     db_path = _resolve_db_path()
     conn = _open_connection(db_path)
     try:
-        _ensure_table(conn)
-        conn.commit()
-    except sqlite3.Error as exc:
-        conn.close()
-        raise SignalAgentError(
-            message=f"Failed to create signals table: {exc}",
-            phase="db_write",
-        ) from exc
+        _ensure_table(conn)  # DDL executes immediately in autocommit mode
 
-    # Determine which symbols to process
-    if symbols is not None:
-        target_symbols: list[str] = list(symbols[:MAX_SYMBOLS])
-    else:
-        try:
+        # Determine which symbols to process
+        if symbols is not None:
+            target_symbols: list[str] = list(symbols[:MAX_SYMBOLS])
+        else:
             target_symbols = _read_screener_results(conn, run_date)
-        except sqlite3.Error as exc:
+
+        if not target_symbols:
             conn.close()
-            raise SignalAgentError(
-                message=f"Failed to read screener_results: {exc}",
-                phase="db_read",
-            ) from exc
+            log_agent_action(
+                agent_name=AGENT_NAME,
+                action=f"no_screener_results for {run_date}",
+                level="INFO",
+                result="empty",
+            )
+            return SignalAgentResult(
+                run_date=run_date,
+                symbols_processed=0,
+                buy_signals=[],
+                hold_signals=[],
+                late_start=False,
+                completed_at=datetime.datetime.now(tz=IST),
+            )
 
-    if not target_symbols:
-        log_agent_action(
-            agent_name=AGENT_NAME,
-            action=f"no_screener_results for {run_date}",
-            level="INFO",
-            result="empty",
-        )
-        conn.close()
-        return SignalAgentResult(
-            run_date=run_date,
-            symbols_processed=0,
-            buy_signals=[],
-            hold_signals=[],
-            late_start=False,
-            completed_at=datetime.datetime.now(tz=IST),
-        )
-
-    # Read research sentiment for each symbol
-    research_by_symbol: dict[str, tuple[str, float]] = {}
-    try:
+        # Read research sentiment for each symbol
+        research_by_symbol: dict[str, tuple[str, float]] = {}
         for sym in target_symbols:
             sentiment, confidence = _read_research_report(conn, sym)
             research_by_symbol[sym] = (sentiment, confidence)
+
     except sqlite3.Error as exc:
         conn.close()
         raise SignalAgentError(
-            message=f"Failed to read research_reports: {exc}",
+            message=f"DB read failed: {exc}",
             phase="db_read",
         ) from exc
 
-    # Fetch OHLCV for all symbols
+    conn.close()  # Release before slow OHLCV fetch + LLM calls
+
+    # --- COMPUTE PHASE: OHLCV fetch, indicators, LLM calls (no DB connection held) ---
     start_date = run_date - datetime.timedelta(days=OHLCV_LOOKBACK_DAYS)
     failed_ohlcv_symbols: set[str] = set()
 
@@ -313,8 +303,6 @@ def run_signal_agent(
             end_date=run_date,
         )
     except (FetchError, ValueError) as exc:
-        # If fetch fails entirely, raise
-        conn.close()
         raise SignalAgentError(
             message=f"OHLCV fetch failed for all symbols: {exc}",
             phase="ohlcv_fetch",
@@ -322,7 +310,6 @@ def run_signal_agent(
 
     # Determine which symbols actually have data in the returned DataFrame
     if ohlcv_df.empty:
-        conn.close()
         raise SignalAgentError(
             message="fetch_ohlcv returned empty DataFrame for all symbols",
             phase="ohlcv_fetch",
@@ -373,22 +360,14 @@ def run_signal_agent(
         )
         all_signals.append(signal)
 
-    # Write all signals to DB after all symbols are processed
-    try:
-        _write_signals(conn, all_signals, run_date)
-        conn.commit()
-    except sqlite3.Error as exc:
-        conn.close()
-        raise SignalAgentError(
-            message=f"Failed to write signals to DB: {exc}",
-            phase="db_write",
-        ) from exc
-
-    conn.close()
-
     buy_signals = [s for s in all_signals if s.signal_type == "BUY"]
     hold_signals = [s for s in all_signals if s.signal_type == "HOLD"]
 
+    # Log completion BEFORE write phase: prevents SQLITE_BUSY_SNAPSHOT.
+    # WAL write in the write phase below advances the end-of-file pointer;
+    # any log_agent_action call after that write would find the SQLiteHandler's
+    # snapshot stale and fail with "database is locked". Logging first keeps
+    # the SQLiteHandler's snapshot current at write time.
     if not buy_signals:
         log_agent_action(
             agent_name=AGENT_NAME,
@@ -403,6 +382,46 @@ def run_signal_agent(
         level="INFO",
         result="ok",
     )
+
+    # Per-signal logging BEFORE write phase — prevents log_agent_action from
+    # being called while the write-phase connection holds the write lock.
+    for signal in all_signals:
+        if signal.signal_type == "BUY":
+            log_agent_action(
+                agent_name=AGENT_NAME,
+                action="buy_signal written",
+                level="INFO",
+                symbol=signal.symbol,
+                result="ok",
+            )
+        else:
+            log_agent_action(
+                agent_name=AGENT_NAME,
+                action=f"hold_signal written reason={signal.skip_reason}",
+                level="INFO",
+                symbol=signal.symbol,
+                result="ok",
+            )
+
+    # --- WRITE PHASE: open a fresh connection, write, close immediately ---
+    conn = _open_connection(db_path)
+    try:
+        conn.execute("BEGIN")
+        _write_signals(conn, all_signals, run_date)
+        conn.execute("COMMIT")
+        conn.execute("PRAGMA wal_checkpoint(PASSIVE);")
+    except sqlite3.Error as exc:
+        try:
+            conn.execute("ROLLBACK")
+        except sqlite3.Error:
+            pass
+        conn.close()
+        raise SignalAgentError(
+            message=f"Failed to write signals to DB: {exc}",
+            phase="db_write",
+        ) from exc
+
+    conn.close()
 
     return SignalAgentResult(
         run_date=run_date,
@@ -446,7 +465,9 @@ def _open_connection(db_path: str) -> sqlite3.Connection:
         An open sqlite3.Connection.
     """
     os.makedirs(os.path.dirname(db_path), exist_ok=True)
-    conn = sqlite3.connect(db_path)
+    # isolation_level=None = autocommit: no implicit transactions held between
+    # operations, preventing WAL snapshot conflicts with the SQLiteHandler.
+    conn = sqlite3.connect(db_path, timeout=30, isolation_level=None)
     for pragma in _WAL_PRAGMAS:
         conn.execute(pragma)
     return conn
@@ -573,22 +594,6 @@ def _write_signals(
                 signal.signalled_at.isoformat(timespec="seconds"),
             ),
         )
-        if signal.signal_type == "BUY":
-            log_agent_action(
-                agent_name=AGENT_NAME,
-                action="buy_signal written",
-                level="INFO",
-                symbol=signal.symbol,
-                result="ok",
-            )
-        else:
-            log_agent_action(
-                agent_name=AGENT_NAME,
-                action=f"hold_signal written reason={signal.skip_reason}",
-                level="INFO",
-                symbol=signal.symbol,
-                result="ok",
-            )
 
 
 # ---------------------------------------------------------------------------
