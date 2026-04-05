@@ -36,7 +36,7 @@ Zero delivery brokerage. CNC orders with GTT stop-losses.
 | src/backtest/runner.py | backtesting.py wrapper | 2 | ✅ Built |
 | src/backtest/validator.py | Backtest performance gate checks | 2 | ✅ Built |
 | src/agents/research_agent.py | Tavily Search + Gemini news synthesis | 3 | ✅ Built |
-| src/agents/signal_agent.py | Groq morning confirmation | 3 | ⏳ Pending |
+| src/agents/signal_agent.py | Groq morning confirmation + Gemini fallback | 3 | ✅ Built |
 | src/agents/screener_agent.py | 3-step stock selection pipeline | 3 | ⏳ Pending |
 | src/agents/watchlist_agent.py | Final watchlist builder (Opus) | 3 | ⏳ Pending |
 | src/execution/auth.py | Shoonya TOTP auto-login | 4 | ⏳ Pending |
@@ -116,6 +116,10 @@ WAL mode pragmas applied at every connection open.
 | Screener.in fallback active | `agent_logs WHERE event_type='screener_fallback'` |
 | Stale fundamentals data | `agent_logs WHERE event_type='fundamentals_stale'` |
 | Safe mode activated | `agent_logs WHERE event_type='safe_mode'` |
+| Signal agent late start | `agent_logs WHERE action LIKE '%late_start%' AND agent_name='signal_agent'` |
+| Groq low confidence (BUY downgraded to HOLD) | `signals WHERE groq_confidence < 0.6 AND groq_confidence >= 0` |
+| Both LLMs unavailable (rule-based BUY kept) | `signals WHERE groq_confidence = -1.0` |
+| Negative sentiment blocking BUY | `signals WHERE skip_reason LIKE '%negative_sentiment%'` |
 
 ---
 

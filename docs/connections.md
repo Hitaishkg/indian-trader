@@ -444,6 +444,53 @@
 - Sentiment values: "Positive", "Negative", "Neutral", "Mixed" (exactly as returned by Gemini)
 - Tavily published_date field: ISO 8601 string (replaces Brave Search fragile age-string heuristics for earnings detection)
 
+## src/agents/signal_agent.py
+
+**Purpose:** Morning pipeline agent (08:20 IST) — reads top screener candidates, fetches fresh 60-day OHLCV, computes RSI/MACD/Bollinger Bands/ATR, applies the combined decision rule (technical + sentiment + Groq advisory check), and writes all signals (BUY and HOLD) to the signals table for full audit trail.
+
+**Public API:**
+- `run_signal_agent(run_date: datetime.date | None = None, symbols: list[str] | None = None) -> SignalAgentResult` — executes the morning signal pipeline; run_date defaults to today IST; symbols overrides screener_results read (for testing); returns SignalAgentResult with late_start=True and empty signal lists if called after 08:50 IST; raises SignalAgentError on fatal DB or OHLCV failures; Groq/Gemini LLM failures handled gracefully
+- `class StockSignal` — frozen dataclass: symbol (str), rsi (float), macd_signal (str: "BUY"/"HOLD"), bollinger_position (str: "ABOVE"/"MIDDLE"/"BELOW"), atr (float), groq_confidence (float 0.0–1.0; -1.0 sentinel when LLM unavailable), signal_type (str: "BUY"/"HOLD"), skip_reason (str | None — populated for HOLD, None for BUY), signalled_at (IST timezone-aware datetime)
+- `class SignalAgentResult` — frozen dataclass: run_date (date), symbols_processed (int), buy_signals (list[StockSignal]), hold_signals (list[StockSignal]), late_start (bool), completed_at (IST datetime)
+- `class SignalAgentError(Exception)` — raised on fatal errors; attributes: message (str), phase (str: "db_read" / "ohlcv_fetch" / "db_write")
+
+**Reads from:**
+- screener_results table: top 5 candidates by momentum rank for today's run_date
+- research_reports table: sentiment + confidence per symbol (requires completed_at IS NOT NULL from today's run)
+- yfinance + jugaad-data (via fetch_ohlcv): 60 calendar days of OHLCV for technical indicator calculation
+- Groq API (requests.post to GROQ_API_ENDPOINT): morning confidence check on evening thesis vs technical indicators
+- Gemini 2.5 Flash (google-genai SDK): fallback LLM if Groq fails or rate-limits
+
+**Writes to:**
+- signals table: one row per processed symbol with rsi, macd_signal, bollinger_position, atr, groq_confidence, signal_type, skip_reason, signalled_at, run_date; written for all symbols (both BUY and HOLD) for full audit trail
+
+**Called by:**
+- Morning pipeline orchestrator at 08:20 IST (Phase 4, Step 6)
+
+**Calls:**
+- `fetch_ohlcv()` (src/data/fetcher.py): fresh 60-day OHLCV per symbol
+- `add_indicators()` (src/indicators/technical.py): RSI, MACD, Bollinger Bands, ATR on the fetched OHLCV
+- Groq API via `requests.post()` — no SDK, direct HTTP; model: llama-3.3-70b-versatile
+- Gemini 2.5 Flash via google-genai SDK — fallback when Groq fails
+- `log_agent_action()` (src/utils/logger.py): all actions logged to agent_logs
+- sqlite3 (stdlib): reads screener_results and research_reports, writes signals table
+
+**Key constants / thresholds relevant to debugging:**
+- `RSI_BUY_THRESHOLD = 40.0` — RSI < 40 triggers technical BUY signal; intentionally conservative, most days produce 0 BUY signals (correct behavior)
+- `OHLCV_LOOKBACK_DAYS = 60` — calendar days of OHLCV fetched for indicator computation
+- `GROQ_MODEL = "llama-3.3-70b-versatile"` — Groq model for advisory check
+- `GROQ_API_ENDPOINT = "https://api.groq.com/openai/v1/chat/completions"` — direct HTTP (no SDK)
+- `GROQ_TIMEOUT_SECONDS = 15` — timeout per Groq request
+- `GROQ_CONFIDENCE_THRESHOLD = 0.6` — Groq confidence below this → downgrade BUY to HOLD; logged as groq_low_confidence
+- `GEMINI_MODEL = "gemini-2.5-flash"` — Gemini fallback model
+- `LLM_UNAVAILABLE_SENTINEL = -1.0` — groq_confidence stored as -1.0 when both LLMs fail; rule-based BUY kept (not skipped)
+- `MAX_SYMBOLS = 5` — processes at most 5 symbols per run
+- `DEADLINE_HOUR = 8`, `DEADLINE_MINUTE = 50` — hard 08:50 IST deadline; late_start=True triggers safe mode in orchestrator; no DB writes on late start
+- Combined decision rule: technical BUY fires when rsi < 40.0 AND macd_hist > 0; blocked if research sentiment = "Negative"; Groq advisory: confidence < 0.6 → downgrade to HOLD; both LLMs failing → keep rule-based BUY, groq_confidence = -1.0
+- Failure modes to check in agent_logs: `late_start`, `groq_low_confidence`, `llm_unavailable`, `negative_sentiment`, `ohlcv_fetch_failed`, `no_screener_results`
+
+---
+
 ## src/data/validator.py
 
 **Purpose:** Data quality gate — validates OHLCV and fundamentals DataFrames for corruption, coverage gaps, and time-series holes before any strategy logic runs.

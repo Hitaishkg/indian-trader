@@ -153,17 +153,23 @@ Lazy-initialized on first call to get_nifty_universe_for_year().
 | regime_still_valid | INTEGER | 1 if Nifty 50 still 200-day SMA check valid |
 | validated_at | TEXT | ISO 8601 IST timestamp |
 
-### signals (written by: Signal Agent — Phase 4, step 6)
+### signals (written by: Signal Agent — Phase 3, signal_agent.py — ✅ Built)
 | Column | Type | Notes |
 |--------|------|-------|
-| symbol | TEXT | NSE ticker symbol |
-| rsi | REAL | RSI value (0-100) |
-| macd_signal | TEXT | "BUY" or "HOLD" |
-| bollinger_position | TEXT | "ABOVE", "MIDDLE", "BELOW" |
-| atr | REAL | Average True Range (INR) |
-| groq_confidence | REAL | Groq signal confidence 0.0–1.0 |
-| signal_type | TEXT | "BUY", "HOLD", "SELL" |
-| signalled_at | TEXT | ISO 8601 IST timestamp |
+| id | INTEGER PRIMARY KEY AUTOINCREMENT | Auto-incrementing row ID |
+| symbol | TEXT NOT NULL | NSE ticker symbol |
+| run_date | TEXT NOT NULL | ISO 8601 date for which the signal was generated |
+| rsi | REAL NOT NULL | RSI value (0–100) |
+| macd_signal | TEXT NOT NULL | "BUY" or "HOLD" |
+| bollinger_position | TEXT NOT NULL | "ABOVE", "MIDDLE", or "BELOW" |
+| atr | REAL NOT NULL | Average True Range in INR |
+| groq_confidence | REAL NOT NULL | Groq advisory confidence 0.0–1.0; -1.0 sentinel when both LLMs unavailable |
+| signal_type | TEXT NOT NULL | "BUY" or "HOLD" |
+| skip_reason | TEXT | NULL on BUY; populated on HOLD with reason (e.g. "negative_sentiment", "groq_low_confidence") |
+| signalled_at | TEXT NOT NULL | ISO 8601 IST timestamp |
+
+Index: `idx_signals_symbol_date` on (symbol, run_date).
+groq_confidence = -1.0 means both Groq and Gemini were unavailable; rule-based BUY is kept (not skipped).
 
 ### risk_approvals (written by: Risk Agent — Phase 4, step 7)
 | Column | Type | Notes |

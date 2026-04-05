@@ -39,4 +39,4 @@
 ⬜ Not started
 
 ## Next Action
-Phase 3 in progress. research_agent.py built. signal_agent.py spec written — awaiting approval before Coder Agent starts.
+Phase 3 in progress. research_agent.py and signal_agent.py built. Next: src/agents/screener_agent.py (Phase 3, Step 3) — full 3-step selection pipeline integrated.

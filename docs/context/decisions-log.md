@@ -1,4 +1,5 @@
 # Decisions Log — Fast Reference
+[2026-04-05] signal_agent.py: Groq advisory-only; both-LLM failure keeps rule-based BUY (groq_confidence=-1.0 sentinel); requests.post() used directly (no groq SDK)
 [2026-04-01] research_agent.py — switched Brave→Tavily; NewsData.io rejected (12h free-tier delay); Tavily published_date ISO string replaces Brave age-string heuristics for earnings detection
 [2026-03-30] research_agent.py — direct HTTP to Brave (not MCP) for testability; two-step DB write (INSERT then UPDATE completed_at) prevents Watchlist Builder race condition; google-genai>=1.0.0 (not deprecated google-generativeai)
 [2026-03-29] backtest/validator.py — gates_passed=True set only here via dataclasses.replace(); strict inequalities for all gates except total_trades (>=); float('inf') passes profit_factor gate naturally

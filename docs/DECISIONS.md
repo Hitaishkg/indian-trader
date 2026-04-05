@@ -7,6 +7,14 @@
 
 ---
 
+## [2026-04-05] — signal_agent.py
+**Built**: Morning signal confirmation agent reading screener_results, computing RSI/MACD/Bollinger/ATR, applying combined decision rule, Groq advisory LLM check.
+**Connects to**: reads screener_results + research_reports; writes signals table; calls fetch_ohlcv, add_indicators, Groq API (requests.post), Gemini fallback (google-genai SDK)
+**Next step**: src/agents/screener_agent.py (Phase 3, Step 3)
+**Notes**: Both-LLM-failure behavior overridden from "skip all trades" to "keep rule-based BUY, groq_confidence=-1.0". RSI_BUY_THRESHOLD=40.0 is intentionally conservative — most days produce 0 BUY signals, which is correct. Hard deadline at 08:50 IST triggers late_start=True and empty result with no DB writes.
+
+---
+
 ## [2026-04-01] — research_agent.py Tavily migration
 
 **Built**: Switched news source from Brave Search to Tavily SDK
