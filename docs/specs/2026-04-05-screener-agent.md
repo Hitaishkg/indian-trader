@@ -100,7 +100,7 @@ def run_screener_agent(
 
 | Source | Call | Notes |
 |--------|------|-------|
-| Nifty 50 universe | `get_nifty_universe_for_year(run_date.year)` | Returns `list[str]` of NSE symbols |
+| Nifty 50 universe | `get_nifty_universe_for_year(run_date.year)` → fallback to `fetch_nifty50_symbols()` if year > 2023 | Returns `list[str]` of NSE symbols |
 | Stock OHLCV | `fetch_ohlcv(symbols, start_date, end_date, cache_expiry_hours=0)` | 400-day lookback from `run_date`; `cache_expiry_hours=0` forces fresh fetch to ensure full date range coverage (known cache limitation from decisions log) |
 | Nifty 50 index OHLCV | `fetch_sector_indices(start_date, end_date, cache_expiry_hours=0)` then filter `symbol == "NIFTY_50"`, drop symbol column | DO NOT use `fetch_ohlcv(["^NSEI"])` — `fetch_sector_indices()` is the established pattern (confirmed in backtest/runner.py and decisions log); `apply_regime_filter` requires no symbol column |
 | Fundamentals | `get_fundamentals_for_date(symbols, run_date)` | Returns `pd.DataFrame` with one row per symbol |
@@ -148,6 +148,7 @@ If `ranked_df.empty` (all passing symbols lacked sufficient OHLCV history):
 
 1. Extract Nifty 50 data: `nifty_ohlcv_df = sector_df[sector_df["symbol"] == "NIFTY_50"].copy().drop(columns=["symbol"])`
 2. Call `apply_regime_filter(ranked_df, nifty_ohlcv_df, open_positions=None)` → `tuple[pd.DataFrame, RegimeResult]`
+   Note: do NOT drop the `symbol` column from `nifty_ohlcv_df` — `apply_regime_filter` ignores extra columns; dropping is unnecessary and fragile.
 3. `filtered_df` = returned DataFrame (includes `position_size_multiplier` column)
 4. `regime_result` = the RegimeResult
 
@@ -249,10 +250,11 @@ Use `fetch_sector_indices()`, not `fetch_ohlcv()`. This is the established patte
 ```python
 sector_df = fetch_sector_indices(start_date, end_date, cache_expiry_hours=0)
 nifty_ohlcv_df = sector_df[sector_df["symbol"] == "NIFTY_50"].copy()
-nifty_ohlcv_df = nifty_ohlcv_df.drop(columns=["symbol"])
+# Do NOT drop the symbol column — apply_regime_filter ignores extra columns.
+# Dropping it is unnecessary and fragile.
 ```
 
-`apply_regime_filter` expects `nifty_ohlcv_df` with only `"date"` and `"close"` columns (no symbol column) and at least 200 rows. The 400-day lookback provides sufficient history.
+`apply_regime_filter` requires at least 200 rows of Nifty 50 OHLCV with `"date"` and `"close"` columns. The 400-day lookback provides sufficient history.
 
 If `fetch_sector_indices` raises any exception → wrap in `ScreenerAgentError(phase="ohlcv_fetch")`.
 
@@ -376,4 +378,4 @@ Write tests in `tests/agents/test_screener_agent.py` mirroring the source struct
 4. **DB schema update**: After implementing, update `docs/context/db-schema.md` to replace the placeholder `screener_results` schema with the actual DDL from Section 5.
 5. **send_info signature**: `send_info(message: str) -> dict[str, bool]` — no `subject` parameter (Telegram only).
 6. **`_ist_now()` helper**: define as a module-level private function returning `datetime.datetime.now(ZoneInfo("Asia/Kolkata"))` (return a datetime object, not a string) — used to populate `screened_at` on `ScreenerResult` and `completed_at` on `ScreenerAgentResult`.
-7. **get_nifty_universe_for_year for live dates**: For live runs in 2026+, `get_nifty_universe_for_year(2026)` returns an empty list (range is 2010–2023 only). In this case, fall back to `fetch_nifty50_symbols()` from `src.data.fetcher`. The Coder Agent must implement this fallback.
+7. **get_nifty_universe_for_year for live dates**: For live runs in 2026+, `get_nifty_universe_for_year(2026)` returns an empty list (range is 2010–2023 only). Screener agent must handle this: if `get_nifty_universe_for_year(year)` returns an empty list AND `year > 2023`, fall back to `fetch_nifty50_symbols()` from `src.data.fetcher` and log a WARNING: `"universe_year_fallback: year {year} > 2023, using fetch_nifty50_symbols()"`. Additionally, `get_nifty_universe_for_year()` itself should be updated to log a WARNING when called with year > 2023 and return the 2023 universe — but that fix is in `fundamentals.py`, not screener_agent. For screener_agent, implement the fallback as the defence layer.

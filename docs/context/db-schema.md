@@ -113,17 +113,21 @@ Lazy-initialized on first call to get_nifty_universe_for_year().
 | close | REAL | Closing price (INR) |
 | volume | REAL | Volume traded |
 
-### screener_results (written by: Screener Agent — Phase 4, step 2)
+### screener_results (written by: src/agents/screener_agent.py — ✅ Built)
 | Column | Type | Notes |
 |--------|------|-------|
-| symbol | TEXT | NSE ticker symbol |
-| roe | REAL | Return on equity (as decimal, e.g. 0.20 = 20%) |
-| debt_to_equity | REAL | Debt-to-equity ratio |
-| momentum_12_1 | REAL | 12-month return minus 1-month return |
-| quality_passed | INTEGER | 1 if passed all 5 filters, 0 otherwise |
-| regime_above_200dma | INTEGER | 1 if Nifty 50 above 200-day SMA |
-| rank | INTEGER | Momentum rank (1-5 for top 5 stocks) |
-| screened_at | TEXT | ISO 8601 IST timestamp |
+| id | INTEGER PRIMARY KEY AUTOINCREMENT | Auto-incrementing row ID |
+| symbol | TEXT NOT NULL | NSE ticker symbol |
+| run_date | TEXT NOT NULL | ISO 8601 date for which the screen was run |
+| rank | INTEGER NOT NULL | Momentum rank (1 = highest; top 5 candidates) |
+| momentum_score | REAL NOT NULL | 12-1 momentum factor score |
+| quality_passed | INTEGER NOT NULL | 1 if passed all 5 hard quality filters, 0 otherwise |
+| regime | TEXT NOT NULL | "ABOVE_200DMA", "BELOW_200DMA", or "BELOW_200DMA_10DAYS" |
+| position_size_multiplier | REAL NOT NULL | 1.0 / 0.5 / 0.0 based on regime |
+| screened_at | TEXT NOT NULL | ISO 8601 IST timestamp when this row was computed |
+
+UNIQUE constraint on (symbol, run_date). Upsert via INSERT OR REPLACE.
+Re-runs on the same date overwrite prior results — most recent run is always authoritative.
 
 ### research_reports (written by: Research Agent — Phase 3/4, step 3)
 | Column | Type | Notes |

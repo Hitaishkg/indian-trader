@@ -32,7 +32,7 @@
 |--------|--------|-------|
 | src/agents/research_agent.py | ✅ Code review passed (Tavily migration) | Spec: docs/specs/2026-03-30-research-agent.md. Migration spec: docs/specs/2026-04-01-research-agent-tavily.md. Tavily SDK replaces Brave Search; `result["content"]` used; error phase strings updated to "tavily_search"; no leftover Brave constants; two-step INSERT+UPDATE completed_at preserved. |
 | src/agents/signal_agent.py | ✅ Code review passed | Spec: docs/specs/2026-04-05-signal-agent.md |
-| src/agents/screener_agent.py | 📋 Spec written, awaiting approval | Spec: docs/specs/2026-04-05-screener-agent.md |
+| src/agents/screener_agent.py | ✅ Code review passed | Spec: docs/specs/2026-04-05-screener-agent.md |
 | src/agents/watchlist_agent.py | ⬜ Not started | |
 
 ## Phase 4–6

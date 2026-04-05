@@ -101,6 +101,16 @@
 - Constants: `AGENT_NAME="signal_agent"`, `DEADLINE_HOUR=8`, `DEADLINE_MINUTE=50`, `RSI_BUY_THRESHOLD=40.0`, `OHLCV_LOOKBACK_DAYS=60`, `GROQ_MODEL="llama-3.3-70b-versatile"`, `GROQ_API_ENDPOINT`, `GROQ_TIMEOUT_SECONDS=15`, `GROQ_CONFIDENCE_THRESHOLD=0.6`, `GEMINI_MODEL="gemini-2.5-flash"`, `LLM_UNAVAILABLE_SENTINEL=-1.0`, `MAX_SYMBOLS=5`, `VALID_SIGNAL_TYPES`, `VALID_BOLLINGER_POSITIONS`, `VALID_MACD_SIGNALS`
 - Decision rule: technical BUY fires when rsi < 40.0 AND macd_hist > 0; blocked if sentiment="Negative"; Groq advisory check applied (confidence < 0.6 → downgrade to HOLD); both LLMs failing → keep rule-based BUY with groq_confidence=-1.0
 
+## src/agents/screener_agent.py
+
+- `run_screener_agent(run_date: datetime.date | None = None) -> ScreenerAgentResult` — runs full 3-step screener pipeline (quality filter → momentum → regime), writes top 5 to screener_results table; returns ScreenerAgentResult; raises ScreenerAgentError on fatal errors
+- `class ScreenerAgentError(Exception)` — raised on fatal errors; attributes: message (str), phase (str: 'db_write', 'ohlcv_fetch', 'fundamentals_fetch', 'quality_filter', 'momentum', 'regime')
+- `class ScreenerResult` — frozen dataclass: symbol (str), rank (int, 1=highest), momentum_score (float), quality_passed (bool), regime (str: 'ABOVE_200DMA'/'BELOW_200DMA'/'BELOW_200DMA_10DAYS'), position_size_multiplier (float: 1.0/0.5/0.0), screened_at (IST datetime), run_date (date)
+- `class ScreenerAgentResult` — frozen dataclass: run_date (date), symbols_screened (int, total Nifty universe size), symbols_passed_quality (int), top5 (list[ScreenerResult], empty when thin_universe or regime_blocked), thin_universe (bool), regime_blocked (bool), completed_at (IST datetime)
+- Constants: `AGENT_NAME="screener_agent"`, `OHLCV_LOOKBACK_DAYS=400`, `MIN_UNIVERSE_SIZE=3`, `MAX_TOP_N=5`, `MOMENTUM_TIEBREAKER_PCT=2.0`
+- DB: writes to screener_results (INSERT OR REPLACE on UNIQUE(symbol, run_date)); reads no DB tables
+- screener_results DDL: id AUTOINCREMENT, symbol, run_date (TEXT ISO date), rank, momentum_score, quality_passed (INTEGER 0/1), regime, position_size_multiplier, screened_at (TEXT ISO timestamp), UNIQUE(symbol, run_date)
+
 ## src/agents/research_agent.py
 
 - `run_research_agent(run_date: datetime.date | None = None, symbols: list[str] | None = None) -> ResearchAgentResult` — runs Tavily Search + Gemini synthesis for top-5 screener candidates; writes to research_reports table with completed_at set last; raises ResearchAgentError on DB read/write failures; Tavily/Gemini failures handled gracefully per-stock
