@@ -23,6 +23,20 @@ Language: Python 3.12. Package manager: uv.
 
 ---
 
+## OUTPUT DISCIPLINE — enforced every response, no exceptions
+
+- No preamble. Start with the answer directly.
+- No filler: "I'll now...", "Let me...", "Great question"
+- No restating the task before doing it.
+- No summary at the end repeating what was just done.
+- Explain only when explanation adds information not already obvious from context.
+- Telegram messages: only what the human needs to act on.
+- Specs: state decisions, not reasoning behind obvious ones.
+- Test results: numbers and pass/fail, narrative only if something failed and needs diagnosis.
+- Every sentence must earn its place. If removing it loses nothing, remove it.
+
+---
+
 ## Verification commands — run after every change
 
 ```bash
