@@ -119,6 +119,21 @@
 - `class ResearchAgentResult` — frozen dataclass: run_date (date), stocks_researched (int), results (list[StockResearch]), skipped_symbols (list[str]), completed_at (IST datetime)
 - Constants: `AGENT_NAME="research_agent"`, `TAVILY_REQUEST_DELAY=0.5`, `TAVILY_MAX_RESULTS=10`, `GEMINI_MODEL="gemini-2.5-flash-preview-04-17"`, `GEMINI_QUOTA_RETRY_DELAY=60`, `VALID_SENTIMENTS`, `FALLBACK_SENTIMENT="Neutral"`, `FALLBACK_CONFIDENCE=0.3`, `EARNINGS_KEYWORDS`, `EARNINGS_AGE_LIMIT_DAYS=5`, `TRANSCRIPT_MIN_CHARS=200`, `MAX_SYMBOLS=5`, `SYMBOL_TO_COMPANY`
 
+## src/agents/watchlist_agent.py
+
+- `run_watchlist_agent(run_date: datetime.date | None = None) -> WatchlistAgentResult` — reads screener_results + research_reports, applies combined decision rule, computes partial pre-trade scorecard, writes all candidates (PROCEED and SKIP) to watchlist table, sends checkpoint notification for human approval; returns immediately (non-blocking); raises WatchlistAgentError on DB read/write failures or when both notification channels fail
+- `check_watchlist_timeout(run_date: datetime.date) -> None` — called by orchestrator at 07:00 IST; marks all pending rows (human_approved=0, approval_source IS NULL) as approval_source='timeout_skip'; sends alert if any rows timed out; raises WatchlistAgentError(phase='timeout_check') on DB failure
+- `record_human_approval(symbol: str, run_date: datetime.date, approved: bool) -> None` — records human approval or rejection; sets human_approved=1/0 and approval_source='human_explicit'; no-op + WARNING if symbol not found; never raises
+- `class WatchlistAgentError(Exception)` — raised on fatal errors; attributes: message (str), phase (str: 'db_read', 'db_write', 'notification', 'timeout_check')
+- `class WatchlistCandidate` — frozen dataclass (intermediate, not written to DB): symbol, rank (int), momentum_score (float), regime (str), position_size_multiplier (float), sentiment (str), confidence (float), earnings_transcript_unavailable (bool), combined_decision (str: "PROCEED"/"SKIP"), skip_reason (str | None), scorecard_score (int), scorecard_max (int)
+- `class WatchlistEntry` — frozen dataclass (written to DB): symbol, combined_decision, scorecard_score, scorecard_max, sentiment, confidence, rank, regime, position_size_multiplier, human_approved (bool), approval_source (str | None), added_at (IST datetime), run_date (date)
+- `class WatchlistAgentResult` — frozen dataclass: run_date (date), candidates_evaluated (int), proceed_count (int), skipped_count (int), approved_symbols (list[str]), human_responded (bool, always False at run time), completed_at (IST datetime)
+- Constants: `AGENT_NAME="watchlist_agent"`, `APPROVAL_DEADLINE_HOUR=7`, `APPROVAL_DEADLINE_MINUTE=0`, `SCORECARD_THRESHOLD=28`, `SCORECARD_MAX_FULL=40`, `SCORECARD_MAX_FULL_NO_EARNINGS=35`, `SCORECARD_MAX_WATCHLIST=20`, `SCORECARD_MAX_WATCHLIST_NO_EARNINGS=15`
+- Combined decision rule: position_size_multiplier==0.0 → SKIP(regime_blocked); sentiment=="Negative" → SKIP(negative_sentiment); else → PROCEED
+- Scorecard at watchlist stage (max 20, or 15 with earnings flag): quality(always 5) + rank(5 if rank≤3 else 0) + regime(ABOVE=5, BELOW=2, BELOW_10DAYS=0) + sentiment(Positive=5, Neutral=3, Mixed=1, Negative=0)
+- Reads from: screener_results (quality_passed=1 rows for run_date), research_reports (completed_at IS NOT NULL, ORDER BY completed_at DESC LIMIT 1 per symbol)
+- Writes to: watchlist table (UNIQUE on symbol+run_date; approval_source NULL until check_watchlist_timeout or record_human_approval)
+
 ## src/execution/paper_trader.py
 
 - `class PaperTrader` — simulated CNC swing trade execution engine; raises ValueError on construction if settings.live_trading is True

@@ -186,16 +186,22 @@ ORDER BY rank ASC
 
 ### research_reports read
 
+Fetch one completed row per symbol. Execute once per screener symbol (in a loop), or fetch all symbols in a single query using an IN clause:
+
 ```sql
 SELECT symbol, sentiment, confidence, earnings_transcript_unavailable
 FROM research_reports
-WHERE DATE(completed_at) = ?
+WHERE symbol = ?
+  AND run_date = ?
   AND completed_at IS NOT NULL
+ORDER BY completed_at DESC
+LIMIT 1
 ```
 
 - `run_date` parameter: `run_date.isoformat()`
-- This is the race condition guard: `completed_at IS NOT NULL` ensures only fully-processed research rows are read.
-- `DATE(completed_at)` extracts the date portion of the ISO timestamp stored in that column.
+- Uses `research_reports.run_date` column (set by research_agent at INSERT time) — more robust than `DATE(completed_at)` which is fragile against midnight boundary edge cases.
+- `completed_at IS NOT NULL` is the race condition guard: only fully-processed rows.
+- `ORDER BY completed_at DESC LIMIT 1` takes the most recent completed row if somehow more than one exists for the same symbol+run_date.
 
 ### Join logic (in Python, not SQL)
 
@@ -498,7 +504,7 @@ SCORECARD_MAX_WATCHLIST_NO_EARNINGS: int = 15  # watchlist-stage max when earnin
 The `research_reports` table in the actual codebase (from `research_agent.py`) has these columns:
 `id, symbol, run_date, sentiment, confidence, source_urls, earnings_transcript_unavailable, completed_at, raw_response, created_at`
 
-The `run_date` column exists (research_agent inserts it). Use `DATE(completed_at) = ?` as the primary filter to match today's completed rows, and `run_date = ?` as an optional secondary filter if needed. Using `DATE(completed_at)` is the correct race condition guard as specified in agents-trading.md.
+The `run_date` column exists (research_agent inserts it). Filter by `run_date = ?` and `completed_at IS NOT NULL`. Do NOT use `DATE(completed_at)` — it is fragile against midnight boundary edge cases. Use `ORDER BY completed_at DESC LIMIT 1` per symbol to take the most recent completed row.
 
 ### screener_results run_date column
 
