@@ -139,15 +139,24 @@ Re-runs on the same date overwrite prior results — most recent run is always a
 | earnings_transcript_unavailable | INTEGER | 1 if earnings reported but transcript not retrievable |
 | completed_at | TEXT | ISO 8601 IST timestamp (NULL until fully done, prevents race conditions) |
 
-### watchlist (written by: Watchlist Builder Agent — Phase 4, step 4)
+### watchlist (written by: src/agents/watchlist_agent.py — ✅ Built)
 | Column | Type | Notes |
 |--------|------|-------|
-| symbol | TEXT | NSE ticker symbol |
-| trade_type | TEXT | "LONG" or "SHORT" |
-| thesis | TEXT | Rationale (quality filter + momentum + sentiment) |
-| approved_by_human | INTEGER | 1 if user approved by 08:00 IST, 0 if default accepted |
-| approved_at | TEXT | ISO 8601 IST timestamp of approval |
-| built_at | TEXT | ISO 8601 IST timestamp when watchlist was built |
+| id | INTEGER PRIMARY KEY AUTOINCREMENT | Auto-incrementing row ID |
+| symbol | TEXT NOT NULL | NSE ticker symbol |
+| run_date | TEXT NOT NULL | ISO 8601 date for which watchlist was built |
+| combined_decision | TEXT NOT NULL | "PROCEED" or "SKIP" |
+| scorecard_score | INTEGER NOT NULL | Watchlist-stage partial scorecard points (0–20 or 0–15 with earnings) |
+| scorecard_max | INTEGER NOT NULL | Max possible points for this candidate (20 or 15 with earnings flag) |
+| sentiment | TEXT NOT NULL | "Positive", "Negative", "Neutral", or "Mixed" |
+| confidence | REAL NOT NULL | LLM confidence 0.0–1.0 |
+| rank | INTEGER NOT NULL | Momentum rank from screener (1=highest) |
+| regime | TEXT NOT NULL | "ABOVE_200DMA", "BELOW_200DMA", or "BELOW_200DMA_10DAYS" |
+| position_size_multiplier | REAL NOT NULL | 1.0 / 0.5 / 0.0 from regime filter |
+| human_approved | INTEGER NOT NULL DEFAULT 0 | 1 if approved by human, 0 if pending/rejected/timed_out |
+| approval_source | TEXT | "human_explicit" / "timeout_skip" / NULL if pending |
+| added_at | TEXT NOT NULL | ISO 8601 IST timestamp when row inserted |
+| UNIQUE(symbol, run_date) | — | No duplicate evaluations per symbol per run_date |
 
 ### morning_signals (written by: Morning Validator Agent — Phase 4, step 5)
 | Column | Type | Notes |

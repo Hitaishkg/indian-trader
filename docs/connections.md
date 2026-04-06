@@ -408,6 +408,53 @@
 - Every order written to orders table BEFORE simulating execution (not after)
 - WAL mode pragmas applied at __init__ time (same as logger.py)
 
+## src/agents/watchlist_agent.py
+
+**Purpose**: Final watchlist builder — reads top 5 screener candidates + LLM research, applies combined decision rule (position_size_multiplier == 0.0 → SKIP; negative sentiment → SKIP; else PROCEED), computes partial pre-trade scorecard (max 20 pts watchlist level), writes all candidates (PROCEED and SKIP) to watchlist table for full audit trail, sends human approval checkpoint via Telegram + Gmail, handles timeout at 07:00 IST.
+
+**Public API:**
+- `class WatchlistAgentError(Exception)` — raised on fatal errors; attributes: message (str), phase (str: "db_read" / "db_write" / "notification" / "timeout_check")
+- `class WatchlistCandidate` — frozen dataclass (intermediate, not persisted): symbol (str), rank (int, 1=highest), momentum_score (float), regime (str), position_size_multiplier (float), sentiment (str), confidence (float), earnings_transcript_unavailable (bool), combined_decision (str: "PROCEED" / "SKIP"), skip_reason (str | None), scorecard_score (int), scorecard_max (int)
+- `class WatchlistEntry` — frozen dataclass (written to watchlist table): symbol, combined_decision, scorecard_score, scorecard_max, sentiment, confidence, rank, regime, position_size_multiplier, human_approved (int 0/1), approval_source (str | None), added_at (IST datetime), run_date (date)
+- `class WatchlistAgentResult` — frozen dataclass: run_date (date), candidates_evaluated (int), proceed_count (int), skipped_count (int), approved_symbols (list[str]), human_responded (bool), completed_at (IST datetime)
+- `run_watchlist_agent(run_date: datetime.date | None = None) -> WatchlistAgentResult` — reads screener_results + research_reports for run_date, applies combined decision rule, writes all to watchlist table, sends checkpoint notification, returns immediately (non-blocking); raises WatchlistAgentError on DB or notification failure
+- `check_watchlist_timeout(run_date: datetime.date) -> None` — called by orchestrator at 07:00 IST; marks all pending approvals (human_approved=0, approval_source IS NULL) as approval_source='timeout_skip'; sends alert if any rows timed out; raises WatchlistAgentError(phase='timeout_check') on DB failure
+- `record_human_approval(symbol: str, run_date: datetime.date, approved: bool) -> None` — records human decision from Telegram; sets human_approved=1 if approved, human_approved=0 if rejected; sets approval_source='human_explicit'; no-op with WARNING if symbol not found; never raises
+
+**Reads from:**
+- screener_results table: quality_passed=1 rows for run_date (all top-N candidates)
+- research_reports table: sentiment, confidence, source_urls, earnings_transcript_unavailable per symbol; filters by completed_at IS NOT NULL for run_date (no race conditions); if multiple rows per symbol, uses most recent (ORDER BY completed_at DESC LIMIT 1)
+
+**Writes to:**
+- watchlist table: one row per evaluated candidate (both PROCEED and SKIP); UNIQUE constraint on (symbol, run_date); approval_source remains NULL until check_watchlist_timeout or record_human_approval called
+
+**Called by:**
+- orchestrator.py at 23:30 IST every Monday (Phase 3 evening pipeline)
+- orchestrator.py calls check_watchlist_timeout() at 07:00 IST
+- orchestrator.py calls record_human_approval() when Telegram reply received
+
+**Calls:**
+- sqlite3 (stdlib): reads screener_results and research_reports, writes watchlist table
+- log_agent_action() (src/utils/logger.py): agent_logs
+- send_checkpoint() (src/utils/notifier.py): Telegram + Gmail approval request
+- send_alert() (src/utils/notifier.py): alerts on thin_universe or timeout
+- send_info() (src/utils/notifier.py): info-level notifications
+
+**Key constants / thresholds relevant to debugging:**
+- `APPROVAL_DEADLINE_HOUR = 7`, `APPROVAL_DEADLINE_MINUTE = 0` — 07:00 IST hard deadline for human approval; check_watchlist_timeout() called by orchestrator at this time
+- `SCORECARD_THRESHOLD = 28` — minimum score required for risk_agent approval; documented here, NOT enforced at watchlist stage (enforced by risk_agent on full scorecard in Phase 4)
+- `SCORECARD_MAX_FULL = 40` — full scorecard max (all 8 criteria; Phase 4 risk_agent stage)
+- `SCORECARD_MAX_FULL_NO_EARNINGS = 35` — full scorecard max when earnings upcoming (no earnings criterion)
+- `SCORECARD_MAX_WATCHLIST = 20` — watchlist stage partial scorecard max (4 criteria only)
+- `SCORECARD_MAX_WATCHLIST_NO_EARNINGS = 15` — watchlist stage max when earnings flag set
+- Watchlist scorecard breakdown (max 20 → 15 with earnings flag): quality(always 5) + rank(5 if rank≤3 else 0) + regime(ABOVE_200DMA=5, BELOW_200DMA=2, BELOW_200DMA_10DAYS=0) + sentiment(Positive=5, Neutral=3, Mixed=1, Negative=0)
+- Combined decision rule: if position_size_multiplier==0.0 (regime blocked) → SKIP with skip_reason="regime_blocked"; else if sentiment=="Negative" → SKIP with skip_reason="negative_sentiment"; else → PROCEED
+- Mixed sentiment → PROCEED with 1 scorecard point (not skipped; only pure Negative skips)
+- Both PROCEED and SKIP candidates written to watchlist table for audit trail (enables full trace of what was evaluated, not just what passed)
+- research_reports filtered by run_date column value, NOT by DATE(completed_at) — robust across midnight boundaries and handles same-day reruns
+
+---
+
 ## src/agents/screener_agent.py
 
 **Purpose:** Runs the 3-step weekly selection pipeline (quality filter → momentum ranking → regime filter). Writes top 5 candidates to screener_results table. Runs every Monday at 22:00 IST; also callable standalone for Phase 4 emergency rescreens.

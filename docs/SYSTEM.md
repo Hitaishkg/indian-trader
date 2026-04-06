@@ -38,7 +38,7 @@ Zero delivery brokerage. CNC orders with GTT stop-losses.
 | src/agents/research_agent.py | Tavily Search + Gemini news synthesis | 3 | ✅ Built |
 | src/agents/signal_agent.py | Groq morning confirmation + Gemini fallback | 3 | ✅ Built |
 | src/agents/screener_agent.py | 3-step stock selection pipeline | 3 | ✅ Built |
-| src/agents/watchlist_agent.py | Final watchlist builder (Opus) | 3 | ⏳ Pending |
+| src/agents/watchlist_agent.py | Final watchlist builder (Opus) | 3 | ✅ Built |
 | src/execution/auth.py | Shoonya TOTP auto-login | 4 | ⏳ Pending |
 | src/execution/shoonya_broker.py | Shoonya order placement and GTT | 4 | ⏳ Pending |
 | src/agents/risk_agent.py | Kill switch checks, position sizing | 4 | ⏳ Pending |
@@ -61,7 +61,7 @@ EVENING (22:00 IST)
        ↓
   Research Agent → Tavily Search → Gemini 2.5 Flash → research_reports (DB, two-step: INSERT + UPDATE completed_at)
        ↓
-  Watchlist Builder → watchlist (DB) → Telegram + Email notification
+  Watchlist Builder → watchlist (DB) → Telegram + Email notification (both, always)
 
 MORNING (08:00 IST)
   Morning Validator → news check FIRST → morning_signals (DB)
@@ -108,6 +108,7 @@ WAL mode pragmas applied at every connection open.
 | Bad data quality score | `agent_logs WHERE event_type='universe_score'` |
 | Stock missing from screener | `agent_logs WHERE event_type='roe_check' AND symbol='X'` |
 | Research not completed for a stock | `research_reports WHERE completed_at IS NULL` |
+| watchlist_agent: if proceed_count=0, check research_reports.completed_at — research may not have completed for today's run_date | `research_reports WHERE run_date=? AND completed_at IS NULL` |
 | Trade not placed | `orders` table + `risk_approvals WHERE symbol='X'` |
 | Kill switch fired | `agent_logs WHERE event_type='kill_switch'` |
 | GTT order missing | `agent_logs WHERE detail LIKE '%gtt%'` |

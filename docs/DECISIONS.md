@@ -7,6 +7,14 @@
 
 ---
 
+## [2026-04-05] — src/agents/watchlist_agent.py
+**Built**: Combined decision agent: screener rank + LLM sentiment → PROCEED/SKIP. Human approval checkpoint via Telegram+Gmail. Partial pre-trade scorecard (max 20pts). Non-blocking design — run_watchlist_agent() returns after sending checkpoint; orchestrator calls check_watchlist_timeout() at 07:00 IST.
+**Connects to**: reads screener_results + research_reports; writes watchlist table; calls send_checkpoint/send_alert/send_info
+**Next step**: Phase 4 — src/execution/auth.py (TOTP auto-login for Shoonya)
+**Notes**: research_reports filtered by run_date column (not DATE(completed_at)). Mixed → PROCEED with 1 scorecard point. SKIP candidates written to watchlist for audit trail. record_human_approval() never raises. SCORECARD_THRESHOLD=28 documented but NOT enforced here — enforced by risk_agent on full scorecard.
+
+---
+
 ## [2026-04-05] — src/agents/screener_agent.py
 **Built**: 3-step weekly stock selection pipeline (quality filter → momentum → regime). Writes top 5 ranked candidates to screener_results table. Standalone-callable for Phase 4 emergency rescreens.
 **Connects to**: reads fetch_ohlcv/fetch_sector_indices/fundamentals (no DB reads); writes screener_results table; calls apply_quality_filter, compute_momentum, apply_regime_filter
