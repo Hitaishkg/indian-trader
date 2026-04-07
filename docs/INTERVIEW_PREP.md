@@ -338,7 +338,7 @@ Covered above in the SQLite WAL section. The short version: discovered during si
 | Number | What it is |
 |--------|-----------|
 | **15 modules** | Built and passing tests (Phases 1–3) |
-| **505 tests** | Total across all test files, all passing |
+| **505 tests** | Total across all test files (grep -rc "def test_" tests/), all passing |
 | **50 symbols** | Current Nifty 50 live universe (`NIFTY50_SYMBOLS` in fetcher.py) |
 | **61 symbols** | Historical constituent list for backtest 2010–2023 (`NIFTY_CONSTITUENTS_BY_SYMBOL` in fundamentals.py) — includes stocks that have since been replaced |
 | **357 trades** | Backtest result (2010–2023, mechanical rules only, no LLM) |
@@ -471,4 +471,4 @@ The honest answer is: I don't know yet. It hasn't traded with real money. It nee
 
 ---
 
-*Generated 2026-04-07. All claims traced to code in `src/` and `docs/`. Backtest numbers from Phase 2 run (report not committed). Test count: 505 (grep -rc "def test_" tests/).*
+*Generated 2026-04-07. All claims traced to code in `src/` and `docs/`. Backtest numbers from Phase 2 run (report not committed to disk). Test count: 505 test functions across 20 test files.*
