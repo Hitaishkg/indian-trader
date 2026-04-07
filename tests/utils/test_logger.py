@@ -142,6 +142,7 @@ def test_criterion_4_setup_logging_sets_log_level_debug(
         shoonya_totp_secret=None,
         fyers_api_key=None,
         brave_api_key=None,
+        tavily_api_key=None,
         gmail_credentials=None,
     )
     monkeypatch.setattr("src.utils.logger.settings", mock_settings)
@@ -176,6 +177,7 @@ def test_criterion_4_setup_logging_sets_log_level_warning(
         shoonya_totp_secret=None,
         fyers_api_key=None,
         brave_api_key=None,
+        tavily_api_key=None,
         gmail_credentials=None,
     )
     monkeypatch.setattr("src.utils.logger.settings", mock_settings)
@@ -461,6 +463,7 @@ def test_criterion_12_level_column_error_debug_critical(
         shoonya_totp_secret=None,
         fyers_api_key=None,
         brave_api_key=None,
+        tavily_api_key=None,
         gmail_credentials=None,
     )
     monkeypatch.setattr("src.utils.logger.settings", mock_settings)
