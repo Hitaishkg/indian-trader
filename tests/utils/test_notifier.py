@@ -46,6 +46,7 @@ def mock_settings(monkeypatch):
         shoonya_totp_secret=None,
         fyers_api_key=None,
         brave_api_key=None,
+        tavily_api_key=None,
         gmail_credentials="/path/to/credentials.json",
     )
     monkeypatch.setattr("src.utils.notifier.settings", mock_settings)
@@ -434,6 +435,7 @@ def test_criterion_18_send_telegram_credentials_missing(
         shoonya_totp_secret=None,
         fyers_api_key=None,
         brave_api_key=None,
+        tavily_api_key=None,
         gmail_credentials="/path/to/credentials.json",
     )
     monkeypatch.setattr("src.utils.notifier.settings", mock_settings)
@@ -546,6 +548,7 @@ def test_criterion_22_send_gmail_credentials_missing(
         shoonya_totp_secret=None,
         fyers_api_key=None,
         brave_api_key=None,
+        tavily_api_key=None,
         gmail_credentials=None,  # Missing
     )
     monkeypatch.setattr("src.utils.notifier.settings", mock_settings)
