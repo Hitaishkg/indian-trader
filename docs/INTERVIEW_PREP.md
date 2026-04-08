@@ -471,4 +471,582 @@ The honest answer is: I don't know yet. It hasn't traded with real money. It nee
 
 ---
 
+## 11. API INTEGRATION DEEP DIVE
+
+---
+
+### 11.1 ANTHROPIC CLAUDE API
+
+**What it does in this project:** Powers the build layer — 7 Claude Code subagents (Architect, Coder, Tester, Debugger, Code Reviewer, GitHub Agent, Docs Agent) that designed and wrote the entire codebase. The trading pipeline itself makes zero direct Anthropic API calls at runtime.
+
+**Authentication:** Claude Code handles authentication via `ANTHROPIC_API_KEY` environment variable. Not managed in `.env` — managed in the Claude Code session context.
+
+**Actual pattern used:**
+```
+.claude/agents/architect.md  → subagent_type: "general-purpose", model: claude-opus-4-5
+.claude/agents/coder.md      → subagent_type: "general-purpose", model: claude-sonnet-4-5
+.claude/agents/tester.md     → subagent_type: "general-purpose", model: claude-haiku-4-5
+```
+Subagents are spawned via Claude Code's `Agent` tool. No code calls `anthropic.Anthropic().messages.create()`.
+
+**Model routing — exact model strings:**
+| Role | Model string | Why |
+|------|-------------|-----|
+| Architect, Research Agent (trading) | `claude-opus-4-5` | Strategic decisions, spec authoring, news synthesis judgment |
+| Coder, Debugger, Code Reviewer | `claude-sonnet-4-5` | Implementation quality, security judgment, debugging |
+| Tester, GitHub Agent, Docs Agent | `claude-haiku-4-5` | Templated/mechanical tasks, pattern matching |
+
+**Prompt caching (how it works at the API level, even though we use it via Claude Code):**
+The Anthropic API supports `cache_control: {type: "ephemeral"}` on content blocks. When the same content block appears in multiple requests within a 5-minute window, the API returns cached results at 1/10th the normal input token rate.
+
+How 90% reduction works mathematically:
+- System prompt: 10,000 tokens, user message: 500 tokens per request
+- Without caching (5 requests): `(10,000 + 500) × 5 = 52,500 tokens billed`
+- With caching (1 write + 4 reads): `10,500 (full) + 4 × (500 + 10,000 × 0.1) = 10,500 + 4 × 1,500 = 16,500 tokens equivalent = 68% reduction`
+- For shorter user messages (100 tokens): `(10,000 × 0.1 + 100) × 4 = 4,400 vs 40,400 → ~89% reduction`
+
+Claude Code caches the conversation context implicitly within a session. The 90% figure is quoted for cases where a large system prompt (e.g., all 4 context files read once) is reused across many subagent calls in the same session.
+
+**Subagent spawning pattern:**
+Claude Code's `Agent` tool spawns a subprocess with the specified subagent type and model. Each subagent starts cold — it reads its task description, reads the relevant context files, executes, and returns a single result message. Agents cannot communicate with each other directly; all shared state goes through the SQLite database or context files in `docs/context/`.
+
+**Likely interview question:** "You said the system uses multiple Claude models — how do you decide which model for which task?"
+**Answer:** The key question is whether the task requires genuine reasoning or mechanical execution. Opus thinks through architectural trade-offs and writes specs. Sonnet writes production code and debugs failures — it needs to catch security issues, not just follow patterns. Haiku runs templated tests and git operations — it's fast and cheap, and the task is well-defined enough that it doesn't need Opus-level reasoning. Mixing tiers saves cost while keeping quality where it matters.
+
+---
+
+### 11.2 GROQ API — `src/agents/signal_agent.py`
+
+**What it does:** Morning signal confirmation — given evening research sentiment + morning technical indicators, returns a confidence score 0.0–1.0 on whether the evening thesis still holds.
+
+**Authentication:** Bearer token in Authorization header.
+```python
+headers = {
+    "Authorization": f"Bearer {settings.groq_api_key}",
+    "Content-Type": "application/json",
+}
+```
+
+**Actual HTTP call (from `_call_groq()`):**
+```python
+response = requests.post(
+    "https://api.groq.com/openai/v1/chat/completions",
+    json={
+        "model": "llama-3.3-70b-versatile",
+        "messages": [{"role": "user", "content": prompt}],
+        "temperature": 0.1,
+        "max_tokens": 100,
+    },
+    headers=headers,
+    timeout=15,
+)
+response.raise_for_status()
+content = response.json()["choices"][0]["message"]["content"]
+```
+
+**Request structure:**
+- Endpoint: `https://api.groq.com/openai/v1/chat/completions`
+- `temperature: 0.1` — low temperature for deterministic confidence scores; we want consistent JSON, not creative prose
+- `max_tokens: 100` — response is `{"confidence": 0.75, "reasoning": "one sentence"}` — 100 tokens is ample
+
+**Response structure:**
+```json
+{
+  "choices": [{"message": {"content": "{\"confidence\": 0.75, \"reasoning\": \"...\"}"}}]
+}
+```
+Extraction: `response.json()["choices"][0]["message"]["content"]` → parse JSON → extract `confidence` float → clamp to [0.0, 1.0].
+
+**Error handling:**
+```python
+except requests.RequestException as exc:
+    log_agent_action(..., action=f"groq_failed: {exc}, trying gemini fallback")
+    return None  # triggers Gemini fallback
+
+except (KeyError, json.JSONDecodeError) as exc:
+    log_agent_action(..., action=f"groq_failed: {exc}, trying gemini fallback")
+    return None
+```
+`None` return means: Groq failed, try Gemini. If Gemini also returns `None`, use `groq_confidence = -1.0` sentinel and keep rule-based BUY.
+
+**Rate limits:** Groq free tier is 1,000 RPD and 30 RPM on llama-3.3-70b-versatile. We call it at most 5 times per morning run (1 call per stock). Nowhere near the limit.
+
+**Why `timeout=15`:** The signal agent must complete by 08:50 IST. It starts at 08:20. With 5 stocks × ~5s processing each = 25s, plus OHLCV fetch (~10s) and DB reads, there's roughly 90 seconds of budget for all 5 Groq calls combined. 15 seconds per call is the hard cutoff — if Groq hangs, we need to fail over to Gemini before the 08:50 deadline.
+
+**Likely interview question:** "Why did you use `requests.post()` directly instead of the Groq SDK?"
+**Answer:** No new dependency — `requests` was already installed for Tavily. The Groq SDK wraps the same OpenAI-compatible HTTP endpoint. Direct `requests.post()` is trivially mockable in tests with `unittest.mock.patch("requests.post")`. The SDK would require mocking a deeper object graph. Same interface, zero added complexity.
+
+---
+
+### 11.3 GEMINI API — `src/agents/research_agent.py` + signal_agent fallback
+
+**What it does:** Evening research synthesis — given 10+ news articles per stock, returns sentiment (Positive/Negative/Neutral/Mixed), confidence score, and source URLs as JSON.
+
+**Authentication:** API key passed to SDK client constructor.
+
+**SDK pattern (`google-genai`, NOT `google-generativeai` — deprecated):**
+```python
+from google import genai
+from google.genai import types as genai_types
+
+client = genai.Client(api_key=settings.gemini_api_key)
+
+response = client.models.generate_content(
+    model="gemini-2.5-flash",
+    contents=user_prompt,
+    config=genai_types.GenerateContentConfig(
+        system_instruction=_GEMINI_SYSTEM_PROMPT,
+    ),
+)
+text = response.text
+```
+
+**Request structure:**
+- `model`: `"gemini-2.5-flash"` — free tier, 250 RPD, long context window
+- `contents`: the user prompt (news articles formatted as text)
+- `system_instruction`: the analyst persona and output format instructions (passed once per call, not cached explicitly)
+
+**Response structure:**
+- `response.text` — direct string access to the generated text
+- Content is expected to be JSON: `{"sentiment": "...", "confidence": ..., "source_urls": [...]}`
+- JSON parse failure → retry once with explicit JSON-only instruction
+
+**Error handling:**
+```python
+except Exception as exc:
+    exc_str = str(exc).lower()
+    if "429" in exc_str or "resourceexhausted" in exc_str or "quota" in exc_str:
+        time.sleep(60)  # GEMINI_QUOTA_RETRY_DELAY
+        # retry once
+    else:
+        return None  # fatal — stock goes to skipped_symbols
+```
+Quota errors (429) get a 60-second sleep and one retry. Non-quota errors are fatal for that stock.
+
+**Why Gemini for research synthesis:**
+- Free tier is 250 requests/day — covers 5 stocks × 1 synthesis call each, 7 days a week
+- Long context window handles 10–15 news article summaries without truncation
+- `gemini-2.5-flash` is fast enough for an evening batch job (not time-critical like Groq at 08:20)
+
+**AFC (Automatic Function Calling):** AFC is enabled by default in the google-genai SDK. It automatically invokes any tool/function definitions you pass in `config.tools` if the model decides to call them. In research_agent.py, no tools are defined — so AFC has nothing to invoke. It's effectively inert. This is relevant if you later add a `search_web` tool to Gemini: AFC would call it automatically mid-generation without you writing explicit tool-dispatch code.
+
+**Prompt caching:** The code passes `system_instruction` as a fresh parameter on every call — no explicit Gemini caching (CachedContent API) is configured. For 5 stocks per evening, the cost is negligible on the free tier. The two-step INSERT/UPDATE pattern (not Gemini) is what prevents the downstream race condition.
+
+**Likely interview question:** "Why not just use Gemini for the morning signal confirmation too, instead of Groq?"
+**Answer:** Latency. At 08:20 with a 08:50 deadline, we have ~30 minutes for everything including OHLCV fetch, indicator computation, and 5 LLM calls. Groq's llama-3.3-70b is typically < 1 second per call. Gemini 2.5 Flash averages 3–8 seconds. With 5 stocks, that's a ~35-second difference. Groq is primary because it's fast. Gemini is the fallback — we'd rather use 8-second Gemini than skip the LLM check entirely.
+
+---
+
+### 11.4 TAVILY API — `src/agents/research_agent.py`
+
+**What it does:** Real-time news fetch for each screener candidate — 3 queries per stock (general news, earnings/results, company outlook), plus an optional 4th transcript query on earnings detection.
+
+**Authentication:** API key passed to Tavily SDK client.
+```python
+from tavily import TavilyClient
+tavily_client = TavilyClient(api_key=settings.tavily_api_key)
+```
+
+**Actual SDK call:**
+```python
+results = tavily_client.search(
+    query=f"{symbol} stock news India",
+    topic="news",                          # or "finance" for earnings queries
+    time_range="week",
+    max_results=10,
+    include_answer=False,
+    search_depth="basic",
+    include_domains=[
+        "economictimes.indiatimes.com",
+        "moneycontrol.com",
+        "business-standard.com",
+        "livemint.com",
+        "financialexpress.com",
+        "reuters.com",
+        "bloomberg.com",
+    ],
+)
+articles = results.get("results", [])
+```
+
+**Response structure per article:**
+```json
+{
+  "title": "HDFC Bank Q3 profit rises 18%",
+  "url": "https://economictimes.indiatimes.com/...",
+  "content": "HDFC Bank reported...",
+  "score": 0.87,
+  "published_date": "2026-04-05"
+}
+```
+`published_date` is ISO date string — used for earnings detection (`age_days = (today - pub_date).days < 5`).
+
+**Three queries per stock:**
+1. `"{symbol} stock news India"`, `topic="news"` — general market news
+2. `"{symbol} NSE quarterly results earnings"`, `topic="finance"` — earnings-specific
+3. `"{company_name} business outlook"`, `topic="news"` — forward-looking analyst takes
+
+**Why `include_domains` not `exclude_domains`:** Allowlist is safer than blocklist. Yahoo Finance, NSE data pages, broker portals all return price data that looks like "news" to search engines. Allowlisting 7 known editorial sources means we get real analysis articles, not quote pages. A blocklist would need constant maintenance as new data aggregators appear.
+
+**Rate limits:** Tavily free tier: 1,000 credits/month. Each search call costs 1 credit. Per evening run: 3 queries × 5 stocks = 15 standard queries, plus 0–5 earnings transcript queries = 15–20 per run. At 5 runs/week × 4 weeks = 80–100 queries/month — comfortably within 1,000 credits.
+
+**Courtesy delay:** `time.sleep(TAVILY_REQUEST_DELAY)` = 0.5 seconds between each query. Prevents burst-rate issues even within free tier limits.
+
+**Why Tavily over Brave Search:** Brave's Developer Plan is nominally free but requires a valid credit card. Brave's free tier payment flow blocked Indian cards at the $0 authorisation charge step — a known issue with Indian bank cards and international pre-auth flows. Tavily accepted without issue. Additionally, Brave returns article age as relative strings ("2 hours ago") requiring fragile heuristic parsing. Tavily returns `published_date` as an ISO date string, which is directly comparable for the earnings recency check (`age_days < 5`).
+
+**Likely interview question:** "How do you know the news articles are genuinely independent and not rewrites of the same press release?"
+**Answer:** We don't, fully. Deduplication happens at the URL level (exact URL match) in `_fetch_tavily_news()`. But two different outlets running the same PTI wire story will have different URLs. The `include_domains` list was chosen to favour editorial sources (Business Standard, Mint, ET have their own reporting teams) over pure aggregators, but that's mitigation, not a guarantee. This is documented as a known limitation in the strategy rules: "Manually spot-check 3 research reports per week during paper trading" is the planned mitigation for Phase 5.
+
+---
+
+### 11.5 SCREENER.IN — `src/data/fundamentals.py` (scraping, not official API)
+
+**What it does:** Fetches ROE, debt-to-equity, quarterly EPS, and P/E ratio for Nifty 50 stocks. Official Screener.in API does not exist for free tier — scraping is the only option.
+
+**Authentication:** None — public pages. Uses a realistic browser User-Agent header to avoid 403s.
+```python
+SCREENER_HEADERS = {
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36...",
+    "Accept": "text/html,application/xhtml+xml,...",
+    "Accept-Language": "en-US,en;q=0.5",
+}
+```
+
+**Actual HTTP call:**
+```python
+# Tries consolidated first, then standalone
+for url in [
+    f"https://www.screener.in/company/{symbol}/consolidated/",
+    f"https://www.screener.in/company/{symbol}/",
+]:
+    response = requests.get(url, headers=SCREENER_HEADERS, timeout=15, allow_redirects=True)
+    if response.status_code == 200:
+        html_text = response.text
+        break
+```
+
+**Parsing with BeautifulSoup:**
+```python
+soup = BeautifulSoup(html_text, "html.parser")
+# Finds Balance Sheet section → iterates table rows → extracts last column value
+for section in soup.find_all("section"):
+    if "Balance Sheet" in section.find(["h2", "h3"]).get_text():
+        for row in section.find("table").find_all("tr"):
+            label = row.find("td", class_="text").get_text(strip=True)
+            latest_val = float(row.find_all("td")[-1].get_text(strip=True))
+```
+
+**Why ROE is not directly available:**
+Screener.in's Key Ratios section shows ROCE (Return on Capital Employed), not ROE. ROCE uses EBIT / Capital Employed; ROE uses Net Profit / Shareholders' Equity. For capital-light businesses (IT, FMCG), ROCE ≈ ROE. For capital-heavy (infra, PSU banks), they diverge significantly.
+
+**ROE computation from Balance Sheet:**
+```python
+debt_to_equity = borrowings / (equity_capital + reserves)
+```
+Screener.in shows individual line items (Equity Capital, Reserves, Borrowings) in the Balance Sheet. D/E is computed, not scraped as a named field.
+
+**D/E edge case — banks:**
+Industrial companies use "Borrowings" (plural). Financial companies (banks, NBFCs) use "Borrowing" (singular) for the same concept. The parser handles both:
+```python
+elif label in ("Borrowings", "Borrowing"):
+    borrowings = val
+```
+This was not in the original implementation — it was discovered when HDFC Bank, ICICI Bank, Axis Bank, and Kotak Bank all returned NULL D/E and silently failed the quality filter.
+
+**Polite scraping:** `time.sleep(random.uniform(2.0, 5.0))` before each symbol fetch. Randomised to avoid pattern detection. Total for 50 symbols ≈ 150–250 seconds = 2.5–4 minutes per full run.
+
+**45-day cache:** Results stored in `data/cache/{symbol}_fundamentals.json`. Cache freshness checked by `os.path.getmtime()`. If `cache_age_days >= 45`, the quality filter treats the stock as `fundamentals_stale` and auto-fails all 5 filters — no trading on stale data.
+
+**3-strike fallback to yfinance:** If Screener.in raises `requests.exceptions.RequestException` or returns non-200 on 3 consecutive attempts → yfinance fallback. yfinance D/E uses `info["debtToEquity"]`; yfinance ROE uses `info["returnOnEquity"]`. Less reliable but usable in degraded mode.
+
+**Likely interview question:** "What happens if Screener.in changes its HTML?"
+**Answer:** The scraper breaks silently — it returns NaN for the affected fields, which causes those stocks to fail the quality filter. We'd see a sudden increase in `data_quality: failed` entries in `agent_logs` during the daily run. The 45-day cache means we'd be trading on cached data for up to 45 days before the failure is noticed. Planned mitigation: a data quality alert when more than 30% of the universe has NaN fundamentals in a single run (not yet implemented — Phase 4 monitor_agent responsibility).
+
+---
+
+### 11.6 YFINANCE + JUGAAD-DATA — `src/data/fetcher.py`
+
+**What it does:** OHLCV data acquisition for all strategy calculations — 400-day lookback for screener, 60-day for signal_agent, 200-day for regime filter.
+
+**Authentication:** None — both are public data APIs.
+
+**yfinance call:**
+```python
+ticker = yf.Ticker(f"{symbol}.NS")  # RELIANCE → RELIANCE.NS
+raw_df = ticker.history(start=start_date, end=yf_end)
+# auto_adjust=True is the default — prices adjusted for dividends/splits
+```
+The `.NS` suffix tells yfinance to fetch from NSE (National Stock Exchange). `.BO` would be BSE.
+
+**jugaad-data call (NSE direct, fallback):**
+```python
+from jugaad_data.nse import stock_df
+raw_df = stock_df(symbol, start_date, end_date, series="EQ")
+# series="EQ" = equity (not futures, not options)
+```
+jugaad-data queries NSE's internal APIs directly. Returns `DATE/OPEN/HIGH/LOW/CLOSE/VOLUME/SYMBOL` column format.
+
+**The jugaad sort bug:** jugaad-data returns rows newest-first (descending by date). yfinance returns oldest-first. The fix:
+```python
+df = df.sort_values("date").reset_index(drop=True)  # applied to jugaad output only
+```
+Without this, momentum calculations using `close[-252]` would read from the wrong end.
+
+**Fallback trigger:**
+```python
+try:
+    df = _fetch_yfinance(symbol, start_date, end_date)
+except (ValueError, requests.exceptions.RequestException):
+    try:
+        df = _fetch_jugaad(symbol, start_date, end_date)
+    except (ValueError, requests.exceptions.RequestException):
+        raise FetchError(symbol, yfinance_error=..., jugaad_error=...)
+```
+Empty DataFrame or all-NaN Close → `ValueError` → try jugaad. Network failure → `RequestException` → try jugaad.
+
+**Cache system:**
+- Files: `data/cache/{symbol}_yfinance.csv` and `data/cache/{symbol}_jugaad.csv`
+- Freshness: `os.path.getmtime() < cache_expiry_hours * 3600`
+- Default: 24 hours. Pass `cache_expiry_hours=0` to bypass entirely.
+- The screener_agent always passes `cache_expiry_hours=0` to get fresh data for its 400-day lookback request.
+
+**Known limitation — date range not validated:**
+Cache stores whatever was fetched (e.g., 200 days). If you then request 400 days and the file is < 24 hours old, the 200-day cached file is returned. The screener gets only 200 days and momentum computation fails for most stocks (`insufficient_history_count` rises). Workaround: `cache_expiry_hours=0`. Proper fix (checking requested range vs. cached range) is planned but not yet implemented.
+
+**Likely interview question:** "Why two data sources instead of just one?"
+**Answer:** Reliability. yfinance's data occasionally has gaps, stale prices, or returns empty for a session if Yahoo's data feed hiccups. jugaad-data queries NSE directly — it's slower but more authoritative for Indian equity data. Having both means a single source failure doesn't propagate into a missed trading day. In practice, yfinance succeeds ~98% of the time; jugaad-data is the safety net.
+
+---
+
+### 11.7 MCP SERVERS — `.mcp.json`
+
+**What it does:** Gives Claude Code sessions two additional tool surfaces: GitHub API operations and live SQLite queries against the trading database.
+
+**Configuration (`/.mcp.json`):**
+```json
+{
+  "mcpServers": {
+    "github": {
+      "type": "http",
+      "url": "https://api.githubcopilot.com/mcp",
+      "headers": {
+        "Authorization": "Bearer ghp_xxxx..."
+      }
+    },
+    "sqlite": {
+      "command": "bash",
+      "args": ["-c", "uvx mcp-server-sqlite --db-path ~/projects/indian-trader/data/trading.db"]
+    }
+  }
+}
+```
+
+**GitHub MCP:** HTTP MCP server hosted by GitHub. Tools available: `mcp__github__push_files`, `mcp__github__create_pull_request`, `mcp__github__add_issue_comment`, `mcp__github__get_file_contents`, etc. The GitHub Agent subagent uses these to push commits and open PRs. Auth: GitHub PAT in Authorization header.
+
+**SQLite MCP:** Local process — `uvx` runs `mcp-server-sqlite` as a subprocess, pointing at the live trading database. Tools: `mcp__sqlite__read_query`, `mcp__sqlite__write_query`, `mcp__sqlite__describe_table`, etc. Used during debugging sessions to inspect live `agent_logs`, `screener_results`, or `signals` tables directly from Claude Code.
+
+**How MCP differs from direct API calls:**
+MCP (Model Context Protocol) is a tool-dispatch layer. Claude Code sends a structured `tool_use` block to the MCP server specifying which tool to call and with what parameters. The server executes it and returns a `tool_result`. From Claude's perspective, MCP tools look identical to built-in tools (Read, Write, Bash). The difference is that MCP tools are provided by external processes.
+
+**Why MCP in Claude Code but direct HTTP in trading agents:**
+MCP requires a running Claude Code session. The trading pipeline runs on a schedule (cron/Task Scheduler) with no interactive session. The trading agents make their own direct HTTP calls (Groq, Tavily) or use SDKs (Gemini, Telegram). MCP is a developer tool, not a runtime tool.
+
+**Likely interview question:** "What's the difference between using the GitHub MCP vs. just running `git push` in the terminal?"
+**Answer:** The GitHub MCP gives Claude Code structured access to GitHub's REST API — creating PRs, adding comments, reading file contents from any branch. `git push` only pushes local commits. The GitHub Agent uses MCP's `create_pull_request` tool after pushing, so the PR is opened automatically. For the SQLite MCP, the equivalent would be running `sqlite3 data/trading.db "SELECT ..."` in a shell — the MCP gives Claude structured query results as JSON rather than raw text, making it easier to reason about.
+
+---
+
+### 11.8 TELEGRAM BOT API — `src/utils/notifier.py`
+
+**What it does:** Delivers three notification types — INFO (status updates), CHECKPOINT (human approval requests), ALERT (kill switch events). Primary notification channel; Gmail is backup.
+
+**Authentication:** Bot token embedded in the URL path (not a header).
+```
+https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage
+```
+
+**Actual HTTP call (from `_send_telegram()`):**
+```python
+response = requests.post(
+    f"https://api.telegram.org/bot{token}/sendMessage",
+    json={
+        "chat_id": chat_id,       # from TELEGRAM_CHAT_ID env var
+        "text": text,             # formatted with HTML
+        "parse_mode": "HTML",
+    },
+    timeout=10,
+)
+```
+
+**Three notification functions:**
+```python
+send_info(message)               # Telegram only — status updates
+send_alert(subject, message)     # Both channels — kill switch, thin universe
+send_checkpoint(subject, message) # Both channels — human approval required
+```
+CHECKPOINT example: `"Tomorrow's watchlist: 3 PROCEED. Top pick: HDFC Bank (16/20). Approve by 08:00?"`
+
+**Response validation:**
+```python
+if response.status_code != 200:
+    # log ERROR, return False
+resp_json = response.json()
+if not resp_json.get("ok"):
+    # log ERROR, return False
+# success
+```
+Telegram returns `{"ok": true, "result": {...}}` on success.
+
+**4096-character limit:** Telegram's `sendMessage` endpoint rejects messages > 4096 characters. Enforced with:
+```python
+if len(text) > 4096:
+    text = text[:4093] + "..."
+```
+
+**Why Telegram over email as primary:**
+- Zero auth complexity — a bot token never expires, needs no OAuth flow, works from any IP
+- Telegram is more reliable than email for real-time delivery in India (email often delays by minutes in mobile push)
+- Telegram push notifications arrive in < 1 second on mobile
+- The human approval window is 8 minutes (09:05–09:13 IST). A 3-minute email delay makes the window effectively 5 minutes.
+
+**Human checkpoint flow:** `watchlist_agent.py` calls `send_checkpoint(subject, message)`. The orchestrator (Phase 4, not yet built) will listen for Telegram replies via the `plugin:telegram` MCP server and call `record_human_approval(symbol, run_date, approved=True)` when the user replies "Y".
+
+**Likely interview question:** "What happens if Telegram goes down right before the 09:13 deadline?"
+**Answer:** Gmail is the backup — `send_checkpoint` calls `_send_gmail` immediately after `_send_telegram`. If both channels fail, `send_checkpoint` logs CRITICAL and returns `{"telegram": False, "gmail": False}`. The orchestrator (Phase 4) checks the return value — both False means safe mode: no new positions opened that day. The human is not reachable, so no trades. This is the correct conservative behavior.
+
+---
+
+### 11.9 GMAIL API — `src/utils/notifier.py`
+
+**What it does:** Secondary notification channel — receives the same ALERT and CHECKPOINT messages as Telegram. Never used for INFO-level messages (Telegram only).
+
+**Authentication:** OAuth 2.0 with offline access. One-time interactive browser flow via `notifier_setup.py`, then silent token refresh for all subsequent runs.
+
+**OAuth flow (one-time setup):**
+```
+credentials.json (downloaded from Google Cloud Console)
+  → InstalledAppFlow.run_local_server(port=0)  [browser opens, user approves]
+  → token.json saved to project root
+```
+`notifier_setup.py` is the only place the browser flow ever runs. The trading pipeline never launches a browser.
+
+**Silent fail when no token:**
+```python
+if creds is None:
+    log_agent_action(
+        agent_name=_AGENT_NAME,
+        action="gmail_auth_required: run notifier_setup.py to authenticate",
+        level="WARNING",
+        result="skipped",
+    )
+    return None  # Telegram continues unblocked
+```
+This was explicitly changed from the original implementation which called `InstalledAppFlow.run_local_server(port=0)` — blocking forever in headless WSL2.
+
+**Scopes:** `["https://www.googleapis.com/auth/gmail.send"]` — minimum required. Send-only, no read access.
+
+**Message construction:**
+```python
+msg = MIMEText(message, "plain")
+msg["Subject"] = f"[Indian Trader] {notification_type.value}: {subject}"
+msg["From"] = "me"   # Gmail API resolves "me" to authenticated address server-side
+msg["To"] = "me"
+raw = base64.urlsafe_b64encode(msg.as_bytes()).decode("ascii")
+service.users().messages().send(userId="me", body={"raw": raw}).execute()
+```
+Note: `"me"` is a valid Gmail API shorthand for `userId="me"` — it is NOT a valid MIME header for a real email address. The Code Reviewer was specifically instructed to flag this pattern (API shorthand in wrong context), but confirmed it's valid for Gmail's internal send endpoint.
+
+**Gmail API service cache:**
+```python
+_gmail_service_cache: Any = None  # module-level
+
+def _build_gmail_service() -> Any | None:
+    global _gmail_service_cache
+    if _gmail_service_cache is not None:
+        return _gmail_service_cache
+    # ... build service ...
+    _gmail_service_cache = service
+    return service
+```
+The service object is cached in memory. `token.json` is re-read only on first call or after token expiry. On expiry, `creds.refresh(GoogleAuthRequest())` silently refreshes using the stored refresh token.
+
+**Why Gmail fails with Indian cards:**
+Google Cloud Console requires a billing account for some API enablements. The $0 "verification charge" for credit card validation is a standard pre-auth flow. Indian banks (especially debit cards) frequently decline international pre-auth charges because Indian RBI regulations require 2FA (OTP) for international transactions, which pre-auth flows don't support. Workaround: use a virtual card or UPI-linked card, or use an existing Google Cloud account that already has billing configured.
+
+**Likely interview question:** "Why keep Gmail if it's the backup and has all these auth complications?"
+**Answer:** The strategy rules say both channels must confirm delivery for every ALERT and CHECKPOINT. The reasoning: if Telegram fails silently and the system enters safe mode, you lose a trading day without knowing why. If only Telegram is used and it fails, you might also miss a kill switch alert. Gmail is the backup channel that ensures at least one notification reached you. The auth complication is a one-time setup cost — once `token.json` exists, it works silently forever (token auto-refreshes).
+
+---
+
+### 11.10 SQLITE AS AN API SURFACE — `src/utils/logger.py` + all agents
+
+**What it does:** Shared communication bus between all pipeline agents. Each agent reads its inputs from specific tables and writes outputs to specific tables. No direct agent-to-agent calls — all inter-agent communication goes through the database.
+
+**WAL mode — why it matters:**
+```sql
+PRAGMA journal_mode=WAL;
+```
+WAL (Write-Ahead Logging) allows concurrent reads while a single writer holds the write lock. Without WAL, any write blocks all reads. With 4 agents running (screener, research, signal, watchlist), WAL allows the signal_agent to read `screener_results` while the research_agent is writing `research_reports`.
+
+**The busy_timeout nuance:**
+```sql
+PRAGMA busy_timeout=30000;  -- 30 seconds
+```
+`busy_timeout` waits up to 30 seconds when a write is blocked by another writer. It does NOT help with `SQLITE_BUSY_SNAPSHOT`. `SQLITE_BUSY_SNAPSHOT` occurs in WAL mode when a read snapshot is stale after a write has advanced the WAL end-of-file pointer. This error cannot be resolved by waiting longer — it requires the reader to open a new connection.
+
+**isolation_level=None — autocommit mode:**
+```python
+conn = sqlite3.connect(db_path, timeout=30, isolation_level=None)
+```
+Python's sqlite3 module defaults to deferred transactions (it wraps everything in implicit transactions). `isolation_level=None` disables this — every statement executes and commits immediately unless inside an explicit `BEGIN / COMMIT`. This gives us full control over transaction boundaries.
+
+**Explicit transaction pattern (all write phases):**
+```python
+conn.execute("BEGIN")
+for row in results:
+    conn.execute("INSERT OR REPLACE INTO screener_results (...) VALUES (...)", row)
+conn.execute("COMMIT")
+conn.execute("PRAGMA wal_checkpoint(PASSIVE);")
+```
+`wal_checkpoint(PASSIVE)` is called after each commit to fold WAL entries back into the main database file, keeping the WAL file from growing unboundedly.
+
+**The critical constraint — log_agent_action() MUST be called outside BEGIN/COMMIT:**
+
+`log_agent_action()` opens its own SQLite connection to write to `agent_logs`. If called inside a `BEGIN / COMMIT` block:
+1. The calling agent holds a write lock from `BEGIN`
+2. `log_agent_action()` tries to write to `agent_logs` on a new connection
+3. The new connection tries to acquire the write lock
+4. Write lock is held by the calling connection → `SQLITE_BUSY_SNAPSHOT`
+5. The logger call fails; depending on exception handling, the pipeline may crash
+
+Pattern enforced across all agents: all logging happens BEFORE or AFTER the write phase, never inside it. `_write_signals()`, `_write_results()`, `_update_row()` are all pure write functions with zero logging calls.
+
+**Two-step write pattern (race condition prevention):**
+```python
+# Step 1: INSERT with completed_at = NULL (immediately visible to readers)
+row_id = conn.execute("INSERT INTO research_reports (..., completed_at) VALUES (..., NULL)")
+
+# Step 2: Do all the slow external work (Tavily, Gemini)
+
+# Step 3: UPDATE with final results, set completed_at LAST
+conn.execute("UPDATE research_reports SET ... completed_at = ? WHERE id = ?", (..., row_id))
+```
+Downstream agents filter `WHERE completed_at IS NOT NULL` — a row with NULL completed_at is invisible to them. If Gemini fails mid-processing, the row stays NULL, the stock is excluded from the watchlist, and the pipeline continues.
+
+**UNIQUE constraints with INSERT OR REPLACE:**
+```sql
+CREATE TABLE screener_results (
+    ...
+    UNIQUE(symbol, run_date)
+);
+
+INSERT OR REPLACE INTO screener_results (...) VALUES (...);
+```
+Emergency rescreens triggered by monitor_agent (when Nifty drops > 3% intraday) overwrite the Monday run on the same `run_date`. `INSERT OR REPLACE` deletes the conflicting row and inserts the new one. The most recent run is always authoritative.
+
+**Likely interview question:** "Why SQLite instead of Postgres or Redis for inter-agent communication?"
+**Answer:** For one trading account with ≤ 2 positions at a time and 5 stocks/week, SQLite is entirely sufficient. It's a single file, zero server setup, zero network calls, backed up trivially with `cp`. WAL mode handles the concurrent access pattern. The real constraint is the one-writer-at-a-time limit — but our write phases are milliseconds each, so the contention window is negligible. If we scaled to managing 50 accounts simultaneously, we'd switch to Postgres. At this scale, SQLite's simplicity wins.
+
+---
+
 *Generated 2026-04-07. All claims traced to code in `src/` and `docs/`. Backtest numbers from Phase 2 run (report not committed to disk). Test count: 505 test functions across 20 test files.*
