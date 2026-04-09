@@ -134,6 +134,18 @@
 - Reads from: screener_results (quality_passed=1 rows for run_date), research_reports (completed_at IS NOT NULL, ORDER BY completed_at DESC LIMIT 1 per symbol)
 - Writes to: watchlist table (UNIQUE on symbol+run_date; approval_source NULL until check_watchlist_timeout or record_human_approval)
 
+## src/agents/risk_agent.py
+
+- `run_risk_agent(run_date: datetime.date | None = None, db_path_override: str | None = None) -> RiskAgentResult` — reads human_approved=1 watchlist rows, runs all four kill switch checks, sizes each approved symbol using 1%-ATR formula, writes all results to risk_approvals table; raises RiskAgentError on DB/paper_trader failures
+- `class RiskAgentError(Exception)` — raised on fatal errors; attributes: message (str), phase (str: 'db_read', 'db_write', 'paper_trader_init')
+- `class RiskApproval` — frozen dataclass: symbol, run_date (date), quantity (int), entry_price_approx (float), stop_loss (float), take_profit (float), position_size_multiplier (float), risk_amount (float), approval_status (str: 'APPROVED'/'REJECTED'), rejection_reason (str | None), approved_at (IST datetime)
+- `class RiskAgentResult` — frozen dataclass: run_date (date), kill_switch_fired (bool), kill_switch_reason (str | None), approved (list[RiskApproval]), rejected (list[RiskApproval]), portfolio_equity (float), peak_equity (float), current_drawdown_pct (float), completed_at (IST datetime)
+- Constants: `AGENT_NAME="risk_agent"`, `STARTING_CAPITAL=10_000.0`, `RISK_PCT=0.01`, `STOP_LOSS_ATR_MULTIPLIER=2.0`, `TAKE_PROFIT_RATIO=2.0`, `MAX_POSITION_PCT=0.40`, `MAX_OPEN_POSITIONS=2`, `DRAWDOWN_KILL_SWITCH_PCT=15.0`, `WIN_RATE_KILL_SWITCH_PCT=40.0`, `CONSECUTIVE_LOSSES_KILL_SWITCH=5`, `SHARPE_KILL_SWITCH=0.8`, `KILL_SWITCH_MIN_TRADES=20`
+- Kill switch order (hardcoded): drawdown_15pct → consecutive_losses_5 → win_rate_below_40pct → sharpe_below_0.8; first trigger wins
+- Reads from: watchlist (human_approved=1, combined_decision='PROCEED'), signals (signal_type='BUY'), trades (all rows ordered by closed_at ASC), positions (via PaperTrader.get_positions())
+- Writes to: risk_approvals table (INSERT OR REPLACE on UNIQUE(symbol, run_date))
+- Called by: orchestrator (08:50 IST), Execution Agent reads risk_approvals output
+
 ## src/execution/paper_trader.py
 
 - `class PaperTrader` — simulated CNC swing trade execution engine; raises ValueError on construction if settings.live_trading is True
