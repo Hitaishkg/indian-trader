@@ -7,6 +7,15 @@
 
 ---
 
+## [2026-04-09] — src/agents/risk_agent.py
+
+**Built:** Kill switch gatekeeper + position sizing — reads human_approved watchlist, runs 4 kill switches in priority order, sizes positions with 1%-ATR formula, writes APPROVED/REJECTED to risk_approvals.
+**Connects to:** Reads watchlist + signals + trades (via SQLite); reads positions/equity via PaperTrader; writes to risk_approvals; calls fetch_ohlcv, send_alert, send_info.
+**Next step:** execution_agent.py — reads risk_approvals, sends human checkpoint via Telegram+email, places CNC orders via PaperTrader.
+**Notes:** Kill switch order hardcoded per approval: drawdown_15pct → consecutive_losses_5 → win_rate_below_40pct → sharpe_below_0.8. Peak equity computed from trades table cumulative sum (realized P&L only; reporter_agent not built yet). Entry price from fresh yfinance fetch (cache_expiry_hours=0). Phase 4 scope: Shoonya deferred to Phase 6 — execution uses PaperTrader only.
+
+---
+
 ## [2026-04-05] — src/agents/watchlist_agent.py
 **Built**: Combined decision agent: screener rank + LLM sentiment → PROCEED/SKIP. Human approval checkpoint via Telegram+Gmail. Partial pre-trade scorecard (max 20pts). Non-blocking design — run_watchlist_agent() returns after sending checkpoint; orchestrator calls check_watchlist_timeout() at 07:00 IST.
 **Connects to**: reads screener_results + research_reports; writes watchlist table; calls send_checkpoint/send_alert/send_info

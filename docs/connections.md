@@ -584,6 +584,53 @@
 
 ---
 
+## src/agents/risk_agent.py
+
+**Purpose:** Gatekeeper between human-approved watchlist and execution — runs all four kill switches (drawdown, consecutive losses, win rate, Sharpe), sizes positions using 1%-ATR formula, writes APPROVED/REJECTED decisions to risk_approvals table.
+
+**Public API:**
+- `run_risk_agent(run_date: datetime.date | None = None, db_path_override: str | None = None) -> RiskAgentResult` — reads human_approved=1 watchlist rows for run_date, runs all kill switch checks, sizes each symbol, writes results to risk_approvals; raises RiskAgentError on DB/PaperTrader failures
+- `class RiskAgentError(Exception)` — raised on fatal errors; attributes: message (str), phase (str: 'db_read', 'db_write', 'paper_trader_init')
+- `class RiskApproval` (frozen dataclass) — symbol, run_date (date), quantity (int), entry_price_approx (float), stop_loss (float), take_profit (float), position_size_multiplier (float), risk_amount (float), approval_status (str: 'APPROVED'/'REJECTED'), rejection_reason (str | None), approved_at (IST datetime)
+- `class RiskAgentResult` (frozen dataclass) — run_date (date), kill_switch_fired (bool), kill_switch_reason (str | None), approved (list[RiskApproval]), rejected (list[RiskApproval]), portfolio_equity (float), peak_equity (float), current_drawdown_pct (float), completed_at (IST datetime)
+
+**Reads from:**
+- watchlist table: human_approved=1 rows with combined_decision='PROCEED' for run_date
+- signals table: atr and signal_type='BUY' for run_date
+- trades table: all rows ordered by closed_at ASC (for kill switch calculations)
+- positions table: via PaperTrader.get_positions() (for open position count)
+
+**Writes to:**
+- risk_approvals table: one row per symbol per run_date with approval_status and sizing detail; INSERT OR REPLACE on UNIQUE(symbol, run_date)
+
+**Called by:** orchestrator.py at 08:50 IST every trading morning; Execution Agent reads risk_approvals output
+
+**Calls:**
+- PaperTrader.get_pnl() and PaperTrader.get_positions() (for equity and open positions)
+- fetch_ohlcv() with cache_expiry_hours=0 (fresh entry prices)
+- log_agent_action() (src/utils/logger.py) for all decisions
+- send_alert() and send_info() (src/utils/notifier.py) for kill switch and summary notifications
+
+**Key constants / thresholds relevant to debugging:**
+- `STARTING_CAPITAL = 10_000.0` — portfolio base equity
+- `RISK_PCT = 0.01` — 1% risk per trade
+- `STOP_LOSS_ATR_MULTIPLIER = 2.0` — normal stop-loss is 2× ATR below entry
+- `TAKE_PROFIT_RATIO = 2.0` — take-profit is 2× stop distance above entry (1:2 risk-reward)
+- `MAX_POSITION_PCT = 0.40` — hard cap: no single position > 40% of current equity
+- `MAX_OPEN_POSITIONS = 2` — maximum 2 concurrent open positions
+- `DRAWDOWN_KILL_SWITCH_PCT = 15.0` — trigger if (peak_equity - portfolio_equity) / peak_equity > 15%
+- `CONSECUTIVE_LOSSES_KILL_SWITCH = 5` — trigger if last 5 trades all have pnl <= 0
+- `WIN_RATE_KILL_SWITCH_PCT = 40.0` — trigger if win_rate < 40% (only checked after >= 20 trades)
+- `SHARPE_KILL_SWITCH = 0.8` — trigger if Sharpe < 0.8 (only checked after >= 20 trades)
+- `KILL_SWITCH_MIN_TRADES = 20` — minimum trades before win_rate and Sharpe checks activate
+- **Kill switch evaluation order (hardcoded, first trigger wins):**
+  1. drawdown_15pct
+  2. consecutive_losses_5
+  3. win_rate_below_40pct (requires >= 20 trades)
+  4. sharpe_below_0.8 (requires >= 20 trades)
+
+---
+
 ## src/data/validator.py
 
 **Purpose:** Data quality gate — validates OHLCV and fundamentals DataFrames for corruption, coverage gaps, and time-series holes before any strategy logic runs.

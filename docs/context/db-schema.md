@@ -184,17 +184,22 @@ Re-runs on the same date overwrite prior results — most recent run is always a
 Index: `idx_signals_symbol_date` on (symbol, run_date).
 groq_confidence = -1.0 means both Groq and Gemini were unavailable; rule-based BUY is kept (not skipped).
 
-### risk_approvals (written by: Risk Agent — Phase 4, step 7)
+### risk_approvals (written by: src/agents/risk_agent.py)
 | Column | Type | Notes |
 |--------|------|-------|
-| symbol | TEXT | NSE ticker symbol |
-| position_size | INTEGER | Shares to buy (rounded down) |
-| entry_price | REAL | Entry price (INR) |
-| stop_loss | REAL | Stop-loss price (INR, 2× ATR) |
-| take_profit | REAL | Take-profit price (INR, 1:2 risk-reward min) |
-| approval_status | TEXT | "APPROVED" or "REJECTED" |
-| rejection_reason | TEXT | Reason if rejected ("drawdown_kill_switch", "max_positions", etc.) or NULL |
-| approved_at | TEXT | ISO 8601 IST timestamp |
+| id | INTEGER PK AUTOINCREMENT | Auto-incrementing row ID |
+| symbol | TEXT NOT NULL | NSE ticker symbol |
+| run_date | TEXT NOT NULL | YYYY-MM-DD |
+| quantity | INTEGER NOT NULL DEFAULT 0 | Shares to buy (0 if rejected) |
+| entry_price_approx | REAL NOT NULL DEFAULT 0.0 | Entry price (INR) from fresh yfinance fetch |
+| stop_loss | REAL NOT NULL DEFAULT 0.0 | Stop-loss price (INR, 2× ATR below entry) |
+| take_profit | REAL NOT NULL DEFAULT 0.0 | Take-profit price (INR, 2× stop distance above entry) |
+| position_size_multiplier | REAL NOT NULL DEFAULT 1.0 | 1.0 or 0.5 (regime-based) |
+| risk_amount | REAL NOT NULL DEFAULT 0.0 | Actual risk in INR used for sizing |
+| approval_status | TEXT NOT NULL | "APPROVED" or "REJECTED" |
+| rejection_reason | TEXT | NULL if approved; reason if rejected (e.g., "max_positions_reached", "insufficient_capital", "kill_switch_fired") |
+| approved_at | TEXT NOT NULL | ISO 8601 IST timestamp |
+| UNIQUE(symbol, run_date) | — | One approval decision per symbol per run date |
 
 ### orders (written by: Execution Agent — Phase 4, step 8)
 | Column | Type | Notes |

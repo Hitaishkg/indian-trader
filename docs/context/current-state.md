@@ -39,10 +39,11 @@
 
 | Module | Status | Notes |
 |--------|--------|-------|
-| src/agents/risk_agent.py | 📋 Spec written, awaiting approval | Spec: docs/specs/2026-04-09-risk-agent.md. Kill switches, position sizing, risk_approvals table. |
+| src/agents/risk_agent.py | ✅ Built | Kill switches, position sizing, risk_approvals table |
+| src/agents/execution_agent.py | ⏳ Pending | Reads risk_approvals, human checkpoint, order placement |
 
 ## Phase 5–6
 ⬜ Not started
 
 ## Next Action
-Phase 4 in progress. Awaiting human approval of docs/specs/2026-04-09-risk-agent.md before Coder Agent starts.
+Phase 4 in progress. Next module: src/agents/execution_agent.py — reads risk_approvals, sends human checkpoint via Telegram+email, places CNC orders via PaperTrader.
