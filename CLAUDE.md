@@ -20,6 +20,10 @@ Language: Python 3.12. Package manager: uv.
 - MAX_TRADE_AMOUNT=10000 is a hard cap — never exceed in any single trade
 - Strategies go live ONLY after passing ALL backtest gates AND 8-week paper gate
 - data/validator.py must be the FIRST module built in Phase 1 — before everything else
+- Before invoking Architect Agent for any new module:
+  1. Run /compact to compress conversation history
+  2. Read only docs/context/ files, not full src/ until required
+  3. Never re-read files already in context
 
 ---
 
@@ -66,6 +70,34 @@ cp .env.example .env
 4. Build pipeline: architect → coder → tester → debugger → code-reviewer → github-agent
 5. Update docs/DECISIONS.md with what was built and why
 6. Docs Agent updates docs/context/ after every completed module
+---
+
+## Known API Gotchas
+
+- **Screener.in — D/E ratio:** Not exposed as a named ratio. Compute from Balance Sheet:
+  `debt_to_equity = Borrowings / (Equity Capital + Reserves)`.
+  Label is "Borrowings" for non-financials, "Borrowing" for banks — handle both.
+
+- **Screener.in — ROE:** ROCE is shown per year, not ROE. Compute ROE from:
+  `roe = Net Profit / (Equity Capital + Reserves)` from the P&L and Balance Sheet sections.
+
+- **Nifty 50 index price:** Use `fetch_sector_indices()` — do NOT use `fetch_ohlcv(["^NSEI"])`,
+  which returns empty data. The `^NSEI` symbol does not work with jugaad-data.
+
+- **Brave Search API:** Not used. News fetching uses Tavily (`TAVILY_API_KEY`). Do not
+  reference `brave_api_key` for news queries anywhere in new code.
+
+- **SQLite — log_agent_action():** Must be called OUTSIDE any `BEGIN`/`COMMIT` block.
+  Calling inside a transaction causes `SQLITE_BUSY_SNAPSHOT` errors. Always close the
+  connection before logging.
+
+- **yfinance — TATAMOTORS.NS:** Sometimes returns 404 or empty data. Always fall back
+  to jugaad-data on `FetchError`. Apply this pattern to all `.NS` symbols, not just TATAMOTORS.
+
+- **Gmail API — userId:** Use `"me"` as `userId` in all Gmail API calls (`users().messages()`,
+  `users().getProfile()` etc.). Do NOT use `"me"` as a MIME header value (From/To fields
+  require real email addresses).
+
 ---
 
 ## Rules files (loaded automatically)
