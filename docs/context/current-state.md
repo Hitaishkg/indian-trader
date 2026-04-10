@@ -40,7 +40,9 @@
 | Module | Status | Notes |
 |--------|--------|-------|
 | src/agents/risk_agent.py | ✅ Built | Kill switches, position sizing, risk_approvals table |
-| src/agents/execution_agent.py | ⏳ Pending | Reads risk_approvals, human checkpoint, order placement |
+| src/agents/execution_agent.py | 📝 Spec written, awaiting approval | Spec: docs/specs/2026-04-10-execution-agent.md |
+| src/agents/monitor_agent.py | 📝 Spec written, awaiting approval | Spec: docs/specs/2026-04-10-monitor-agent.md |
+| src/agents/reporter_agent.py | 📝 Spec written, awaiting approval | Spec: docs/specs/2026-04-10-reporter-agent.md |
 
 ## Phase 5–6
 ⬜ Not started
