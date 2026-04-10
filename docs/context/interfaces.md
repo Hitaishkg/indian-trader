@@ -134,6 +134,17 @@
 - Reads from: screener_results (quality_passed=1 rows for run_date), research_reports (completed_at IS NOT NULL, ORDER BY completed_at DESC LIMIT 1 per symbol)
 - Writes to: watchlist table (UNIQUE on symbol+run_date; approval_source NULL until check_watchlist_timeout or record_human_approval)
 
+## src/agents/execution_agent.py
+
+- `run_execution_agent(run_date: datetime.date | None = None, db_path_override: str | None = None) -> ExecutionResult` — reads APPROVED risk_approvals for run_date, sends human checkpoint notification, polls checkpoint file for up to 8 minutes, validates current prices against approved prices, places CNC orders via PaperTrader; returns ExecutionResult; raises ExecutionAgentError on fatal DB/PaperTrader failures
+- `class ExecutionAgentError(Exception)` — raised on fatal errors; attributes: message (str), phase (str: 'db_read', 'db_write', 'checkpoint', 'paper_trader_init')
+- `class OrderRecord` — frozen dataclass: symbol, run_date (date), quantity (int), entry_price (float), stop_loss (float), take_profit (float), order_id (int, -1 if not placed), status (str: 'PLACED'/'SKIPPED_SLIPPAGE'/'SKIPPED_RECALC_ZERO'/'SKIPPED_PRICE_FETCH_FAILED'/'SKIPPED_ORDER_ERROR'), deviation_pct (float), recalculated (bool), placed_at (IST datetime | None)
+- `class ExecutionResult` — frozen dataclass: run_date (date), human_confirmed (bool), safe_mode (bool), safe_mode_reason (str | None: 'timeout_no_confirmation'/'no_approved_trades'/None), orders_placed (list[OrderRecord]), orders_skipped (list[OrderRecord]), completed_at (IST datetime)
+- Constants: `AGENT_NAME="execution_agent"`, `CHECKPOINT_FILE_PREFIX="/tmp/indian-trader-checkpoint-"`, `CHECKPOINT_POLL_INTERVAL_SECS=15`, `CHECKPOINT_TIMEOUT_SECS=480`, `DEVIATION_RECALC_THRESHOLD=0.005`, `DEVIATION_SKIP_THRESHOLD=0.015`, `STOP_LOSS_ATR_MULTIPLIER=2.0`, `STOP_LOSS_PCT_CAP=0.03`, `TAKE_PROFIT_RATIO=2.0`, `MAX_POSITION_PCT=0.40`, `MAX_TRADE_AMOUNT=10_000.0`, `STARTING_CAPITAL=10_000.0`
+- Confirmation: polls `/tmp/indian-trader-checkpoint-{run_date}.txt`; content must equal `run_date.isoformat()` (anti-stale guard)
+- Reads from: risk_approvals (APPROVED rows), watchlist (context only), signals (ATR for recalculation)
+- Writes to: execution_checkpoints table (PENDING→CONFIRMED or TIMEOUT); orders/positions via PaperTrader.place_order()
+
 ## src/agents/risk_agent.py
 
 - `run_risk_agent(run_date: datetime.date | None = None, db_path_override: str | None = None) -> RiskAgentResult` — reads human_approved=1 watchlist rows, runs all four kill switch checks, sizes each approved symbol using 1%-ATR formula, writes all results to risk_approvals table; raises RiskAgentError on DB/paper_trader failures
