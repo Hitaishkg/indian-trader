@@ -1632,6 +1632,7 @@ def test_emergency_rescreen_at_1535(temp_db, mock_settings):
     current_time = datetime.datetime(2026, 4, 10, 15, 35, 0, tzinfo=IST)
 
     with patch("src.agents.monitor_agent.log_agent_action"), \
+         patch("src.agents.monitor_agent.send_alert"), \
          patch("src.agents.monitor_agent.PaperTrader") as mock_pt, \
          patch("src.agents.monitor_agent.fetch_sector_indices") as mock_fetch_idx, \
          patch("src.agents.monitor_agent.run_screener_agent") as mock_screener:
@@ -1647,12 +1648,12 @@ def test_emergency_rescreen_at_1535(temp_db, mock_settings):
         }
         mock_pt.return_value = mock_instance
 
-        # Return Nifty data with >3% drop
+        # Return Nifty data with 3.5% drop (strictly > 3.0% threshold)
         import pandas as pd
         mock_fetch_idx.return_value = pd.DataFrame({
             "symbol": ["NIFTY50", "NIFTY50"],
             "date": ["2026-04-09", "2026-04-10"],
-            "close": [20000.0, 19400.0],  # 3% drop
+            "close": [20000.0, 19300.0],  # 3.5% drop
         })
 
         result = run_monitor_agent(
@@ -1661,8 +1662,8 @@ def test_emergency_rescreen_at_1535(temp_db, mock_settings):
             db_path_override=temp_db,
         )
 
-    # Should have called run_screener_agent
-    assert mock_screener.called or not mock_screener.called  # May or may not trigger based on data
+    # Nifty dropped >3% at 15:35 → emergency rescreen triggered
+    assert result.emergency_rescreen_triggered is True
 
 
 def test_emergency_rescreen_not_at_1535(temp_db, mock_settings):
