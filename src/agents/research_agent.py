@@ -58,7 +58,6 @@ TAVILY_INCLUDE_DOMAINS: list[str] = [
 
 # Gemini
 GEMINI_MODEL: str = "gemini-2.5-flash"
-print("Using model:", GEMINI_MODEL)
 GEMINI_QUOTA_RETRY_DELAY: int = 60  # seconds to wait on 429
 
 # Sentiment
