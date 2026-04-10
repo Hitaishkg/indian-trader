@@ -48,4 +48,4 @@
 ⬜ Not started
 
 ## Next Action
-Phase 4 in progress. Next module: src/agents/orchestrator.py — Python Agent SDK pipeline controller for all 10 trading agents.
+Phase 4 in progress. src/agents/orchestrator.py — spec written, awaiting approval (docs/specs/2026-04-10-orchestrator.md). After approval: coder implements, then main.py updated to use orchestrator.
