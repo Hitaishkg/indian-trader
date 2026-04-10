@@ -40,12 +40,12 @@ CREATE TABLE IF NOT EXISTS strategy_perf (
     win_rate_pct     REAL    NOT NULL DEFAULT 0.0,
     sharpe_ratio     REAL    NOT NULL DEFAULT 0.0,
     max_drawdown_pct REAL    NOT NULL DEFAULT 0.0,
-    profit_factor    REAL    NOT NULL DEFAULT 0.0,
+    profit_factor    REAL,
     updated_at       TEXT    NOT NULL
 );
 ```
 
-`profit_factor = sum(pnl where pnl > 0) / abs(sum(pnl where pnl < 0))`. Guard: if no losses, profit_factor = 0.0 (insufficient data), not infinity. `INSERT OR REPLACE` on metric_date UNIQUE constraint.
+`profit_factor = sum(pnl where pnl > 0) / abs(sum(pnl where pnl < 0))`. Guard: if no losses (denominator == 0), return `None` (stored as NULL in DB, displayed as "N/A" in report and dashboard). Never store `0.0` or `inf` for this case. `INSERT OR REPLACE` on metric_date UNIQUE constraint.
 
 ### Decision 3 -- Report File Format
 
@@ -155,7 +155,7 @@ class DailyReport:
         loss_count: Total losing trades.
         win_rate_pct: win_count / total_trades * 100 (0.0 if no trades).
         sharpe_ratio: Annualized Sharpe from daily returns.
-        profit_factor: Sum(wins) / abs(Sum(losses)). 0.0 if no losses.
+        profit_factor: Sum(wins) / abs(Sum(losses)). None if no losses (NULL in DB, N/A in display).
         trades_closed_today: Number of trades closed on report_date.
         wins_today: Winning trades closed today.
         losses_today: Losing trades closed today.
@@ -257,7 +257,7 @@ def run_reporter_agent(
    h. `win_count` = pnl_data["win_count"], `loss_count` = pnl_data["loss_count"].
    i. `win_rate_pct` = win_count / total_trades * 100 if total_trades > 0 else 0.0.
    j. `sharpe_ratio` = `_compute_sharpe(all_trades)` (identical to risk_agent.py).
-   k. `profit_factor` = sum(pnl for t where pnl > 0) / abs(sum(pnl for t where pnl < 0)). If denominator is 0, return 0.0.
+   k. `profit_factor` = sum(pnl for t where pnl > 0) / abs(sum(pnl for t where pnl < 0)). If denominator is 0 (no losing trades), return None. Never return 0.0 or inf for this case.
    l. `trades_closed_today`, `wins_today`, `losses_today` from today's trades.
    m. `consecutive_losses` = count of consecutive trades with pnl <= 0 from end of all_trades.
    n. `kill_switch_status` = _compute_kill_switch_status(drawdown_pct, win_rate_pct, total_trades, sharpe_ratio, consecutive_losses).
@@ -402,7 +402,7 @@ All via `log_agent_action(agent_name=AGENT_NAME, ...)`.
 10. **Win rate with < 20 trades**: win_rate_status == "N/A -- insufficient trades".
 11. **Sharpe below 0.8 with 20+ trades**: sharpe_status == "TRIGGERED".
 12. **Consecutive losses = 4**: consecutive_losses == 4, displayed as "4 of 5".
-13. **Profit factor with no losses**: profit_factor == 0.0, not infinity.
+13. **Profit factor with no losses**: profit_factor is None, stored as NULL in DB, displayed as "N/A".
 14. **Profit factor normal**: sum(wins) / abs(sum(losses)) computed correctly.
 15. **Re-run same date**: INSERT OR REPLACE overwrites both tables without error.
 16. **Report file created**: `reports/YYYY-MM-DD.md` exists with correct content.

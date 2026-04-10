@@ -10,9 +10,11 @@ The Execution Agent is the human checkpoint gateway between risk-approved trade 
 
 No Telegram webhook or listener exists. Polling Telegram for replies would require a bot listener process that is out of scope.
 
-**Resolution:** File-based checkpoint. The agent writes a checkpoint summary to the `execution_checkpoints` table (for audit) and creates a flag file at `/tmp/indian-trader-checkpoint-{YYYY-MM-DD}.txt`. The human confirms by writing `Y` (case-insensitive, stripped) to that file. The agent polls this file every 15 seconds for 8 minutes (32 polls). On timeout, the file is deleted and safe mode activates.
+**Resolution:** File-based checkpoint. The agent writes a checkpoint summary to the `execution_checkpoints` table (for audit) and creates a flag file at `/tmp/indian-trader-checkpoint-{YYYY-MM-DD}.txt`. The human confirms by writing the ISO date string to that file. The agent polls every 15 seconds for 8 minutes (32 polls), checking `content.strip() == run_date.isoformat()`. On timeout, the file is deleted and safe mode activates.
 
-The Telegram/Gmail notification tells the human: "Write Y to /tmp/indian-trader-checkpoint-{date}.txt to confirm." This is testable without any network dependency.
+**Anti-stale-approval guard:** File must contain exactly `run_date.isoformat()` (e.g. `"2026-04-10"`), not a generic "Y". A leftover file from a prior day will never match today's date — preventing accidental auto-approval from stale state.
+
+The Telegram/Gmail notification tells the human: `echo 2026-04-10 > /tmp/indian-trader-checkpoint-2026-04-10.txt` to confirm. This is testable without any network dependency.
 
 ### Decision 2 -- GTT Orders via PaperTrader
 
@@ -182,7 +184,7 @@ Used only when deviation > 0.5% and recalculation is needed. If ATR not found, s
 8. Write checkpoint record to `execution_checkpoints` table with status='PENDING'.
 9. Poll checkpoint file (`/tmp/indian-trader-checkpoint-{run_date}.txt`) every 15 seconds for 8 minutes.
 10. If timeout -> update checkpoint to status='TIMEOUT', send alert, return safe mode.
-11. If confirmed (file contains 'Y') -> update checkpoint to status='CONFIRMED', delete file.
+11. If confirmed (file content.strip() == run_date.isoformat()) -> update checkpoint to status='CONFIRMED', delete file.
 12. For each APPROVED symbol:
     a. Fetch current price via `fetch_ohlcv(symbols=[symbol], start_date=today-5, end_date=today, cache_expiry_hours=0)`, take last close.
     b. If price fetch fails -> log, add to skipped with `SKIPPED_PRICE_FETCH_FAILED`, continue.
@@ -207,7 +209,7 @@ EXECUTION CHECKPOINT - {run_date}
    SL: Rs.{stop_loss:.0f} | TP: Rs.{take_profit:.0f}
    Rank: {rank} | Sentiment: {sentiment} ({confidence:.0%}) | Score: {scorecard_score}
 
-To confirm: echo Y > /tmp/indian-trader-checkpoint-{run_date}.txt
+To confirm: echo {run_date} > /tmp/indian-trader-checkpoint-{run_date}.txt
 Deadline: 09:13 IST (8 minutes from now)
 ```
 
