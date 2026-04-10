@@ -13,7 +13,6 @@ Uses PaperTrader data only.
 from __future__ import annotations
 
 import datetime
-import math
 import os
 import sqlite3
 from collections import defaultdict
@@ -423,15 +422,6 @@ def _build_markdown_report(report: DailyReport) -> str:
     else:
         pf_display = f"{report.profit_factor:.2f}"
 
-    # Overall kill switch status for summary line
-    statuses = [ks.drawdown_status, ks.win_rate_status, ks.sharpe_status]
-    if "TRIGGERED" in statuses:
-        overall_ks = "KILL SWITCH TRIGGERED"
-    elif "APPROACHING" in statuses:
-        overall_ks = "WARNING — thresholds approaching"
-    else:
-        overall_ks = "SAFE"
-
     lines = [
         f"# Daily Report — {date_str}",
         "",
@@ -468,7 +458,7 @@ def _build_notification_message(report: DailyReport) -> str:
     ks = report.kill_switch_status
     statuses = [ks.drawdown_status, ks.win_rate_status, ks.sharpe_status]
     if "TRIGGERED" in statuses:
-        ks_line = f"Kill switch status: KILL SWITCH TRIGGERED"
+        ks_line = "Kill switch status: KILL SWITCH TRIGGERED"
     elif "APPROACHING" in statuses:
         approaching = [s for s in ["drawdown", "win rate", "sharpe"]
                        if [ks.drawdown_status, ks.win_rate_status, ks.sharpe_status][

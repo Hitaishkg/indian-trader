@@ -168,6 +168,27 @@
 - `PaperTrader.check_gtts(current_prices: dict[str, float]) -> list[dict[str, object]]` — checks all open positions against stop_loss/take_profit; triggers close_position on hit; updates unrealized P&L on no-hit; never raises; returns list of triggered dicts with keys symbol, exit_price, exit_reason, trade_id
 - `PaperTrader.update_stop_loss(symbol: str, new_stop_loss: float) -> None` — updates stop_loss in positions table for regime/LLM tightening; raises ValueError if no position or new_stop_loss >= entry_price
 
+## src/agents/monitor_agent.py
+
+- `run_monitor_agent(run_date: datetime.date | None = None, current_time: datetime.datetime | None = None, db_path_override: str | None = None) -> MonitorResult` — runs one monitoring tick; checks GTTs, tightens stop-losses, runs 30-min GTT reconciliation, checks kill switches, and at 15:35 runs emergency rescreen if Nifty dropped >3%; raises MonitorAgentError on fatal failures
+- `class MonitorAgentError(Exception)` — raised on fatal errors; attributes: message (str), phase (str: 'db_read', 'paper_trader_init', 'price_fetch', 'gtt_check', 'gtt_reconciliation', 'stop_tighten', 'emergency_rescreen')
+- `class MonitorResult` — frozen dataclass: positions_checked (int), exits_triggered (list[dict[str, object]]), stops_tightened (int), gtt_reconciliation_ran (bool), kill_switch_detected (bool), emergency_rescreen_triggered (bool), completed_at (IST datetime)
+- Constants: `AGENT_NAME="monitor_agent"`, `STARTING_CAPITAL=10_000.0`, `PRICE_FETCH_LOOKBACK_DAYS=5`, `NIFTY_EMERGENCY_DROP_PCT=3.0`, `STOP_LOSS_ATR_NORMAL=2.0`, `STOP_LOSS_ATR_TIGHT=1.0`, `LLM_NEGATIVE_CONFIDENCE_THRESHOLD=0.8`, `NEGATIVE_SENTIMENT="Negative"`, `TIGHTEN_REGIMES=frozenset({"BELOW_200DMA","BELOW_200DMA_10DAYS"})`, `GTT_RECONCILIATION_INTERVAL_MINUTES=30`, `EMERGENCY_RESCREEN_HOUR=15`, `EMERGENCY_RESCREEN_MINUTE=35`
+- Kill switch check: informational only — does NOT halt monitoring of existing positions; drawdown/consecutive_losses check with any trade count; win_rate only after KILL_SWITCH_MIN_TRADES
+- Stop tightening: monotonic guard — only tightens if new_stop > current_stop_loss; ATR from signals table (today BUY first, then most recent, then 0.0/skip with atr_unavailable_skip_tighten log)
+- Both regime and LLM tightening may apply per symbol per tick; second tighten is a no-op if stop is already tight enough (counted once in stops_tightened)
+
+## src/agents/reporter_agent.py
+
+- `run_reporter_agent(report_date: datetime.date | None = None, db_path_override: str | None = None) -> ReporterResult` — generates end-of-day report, writes daily_pnl + strategy_perf tables, writes reports/YYYY-MM-DD.md, sends alert via both Telegram + Gmail; raises ReporterAgentError on fatal errors
+- `class ReporterAgentError(Exception)` — raised on fatal errors; attributes: message (str), phase (str: 'db_read', 'db_write', 'report_write', 'notification')
+- `class DailyReport` — frozen dataclass: report_date, daily_pnl, cumulative_pnl, unrealized_pnl, equity, peak_equity, drawdown_pct, total_trades, win_count, loss_count, win_rate_pct, sharpe_ratio, profit_factor (float | None — None when no losing trades), trades_closed_today, wins_today, losses_today, open_positions (list[dict]), open_position_count, kill_switch_status (KillSwitchStatus), computed_at
+- `class KillSwitchStatus` — frozen dataclass: drawdown_status (str), win_rate_status (str), consecutive_losses (int), sharpe_status (str); statuses are "SAFE"/"APPROACHING"/"TRIGGERED"/"N/A -- insufficient trades"
+- `class ReporterResult` — frozen dataclass: report_date, report (DailyReport), report_file_path (str), db_written (bool), notification_sent (dict[str, bool]), completed_at
+- Constants: `AGENT_NAME="reporter_agent"`, `STARTING_CAPITAL=10_000.0`, `KILL_SWITCH_MIN_TRADES=20`, `DRAWDOWN_APPROACHING_PCT=10.0`, `DRAWDOWN_TRIGGERED_PCT=15.0`, `WIN_RATE_APPROACHING_PCT=45.0`, `WIN_RATE_TRIGGERED_PCT=40.0`, `SHARPE_APPROACHING=1.0`, `SHARPE_TRIGGERED=0.8`, `CONSECUTIVE_LOSSES_LIMIT=5`, `REPORTS_DIR="reports"`
+- profit_factor: None when denominator (sum of losses) == 0; stored as NULL in strategy_perf; displayed as "N/A — no losing trades" in markdown
+- DB: writes to daily_pnl (INSERT OR REPLACE on report_date) and strategy_perf (INSERT OR REPLACE on metric_date); reads trades table ordered by closed_at ASC; uses PaperTrader.get_pnl() and get_positions()
+
 ## dashboard/server.py
 
 - `_db_connect() -> sqlite3.Connection` — opens read-only SQLite connection with `PRAGMA query_only=ON`, WAL pragmas; row_factory = sqlite3.Row

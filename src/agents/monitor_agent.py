@@ -22,7 +22,7 @@ from src.agents.risk_agent import (
     CONSECUTIVE_LOSSES_KILL_SWITCH,
     DRAWDOWN_KILL_SWITCH_PCT,
     KILL_SWITCH_MIN_TRADES,
-    SHARPE_KILL_SWITCH,
+    SHARPE_KILL_SWITCH,  # noqa: F401  # imported per spec; Sharpe requires full period — not computed per-tick
     WIN_RATE_KILL_SWITCH_PCT,
 )
 from src.agents.screener_agent import ScreenerAgentError, run_screener_agent

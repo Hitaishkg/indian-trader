@@ -22,6 +22,7 @@ data/cache/
 data/raw/
 logs/
 *.log
+reports/
 
 # OS
 .DS_Store
