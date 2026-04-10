@@ -344,7 +344,7 @@ def _check_kill_switches(
 
     # Win rate (only after KILL_SWITCH_MIN_TRADES completed trades)
     if len(trades) >= KILL_SWITCH_MIN_TRADES:
-        wins = sum(1 for t in trades if float(t["pnl"]) > 0)  # type: ignore[arg-type]
+        wins = sum(1 for t in trades if float(t["pnl"]) > 0)  # type: ignore[arg-type,misc]
         win_rate = wins / len(trades) * 100.0
         if win_rate < WIN_RATE_KILL_SWITCH_PCT:
             return True, f"win_rate_below_40pct ({win_rate:.1f}%)"
@@ -476,9 +476,9 @@ def run_monitor_agent(
                         if not sym_df.empty:
                             current_prices[symbol] = float(sym_df["close"].iloc[-1])
                         else:
-                            current_prices[symbol] = float(pos["current_price"])
+                            current_prices[symbol] = float(pos["current_price"])  # type: ignore[arg-type]
                     else:
-                        current_prices[symbol] = float(pos["current_price"])
+                        current_prices[symbol] = float(pos["current_price"])  # type: ignore[arg-type]
                 except FetchError:
                     log_agent_action(
                         agent_name=AGENT_NAME,
@@ -487,7 +487,7 @@ def run_monitor_agent(
                         symbol=symbol,
                         result="using_stale_price",
                     )
-                    current_prices[symbol] = float(pos["current_price"])
+                    current_prices[symbol] = float(pos["current_price"])  # type: ignore[arg-type]
 
             # --- Step 3: Check GTTs ---
             exits_triggered = pt.check_gtts(current_prices)
@@ -520,8 +520,8 @@ def run_monitor_agent(
 
                 for pos in positions:
                     sym = str(pos["symbol"])
-                    entry_price = float(pos["entry_price"])
-                    current_stop = float(pos["stop_loss"])
+                    entry_price = float(pos["entry_price"])  # type: ignore[arg-type]
+                    current_stop = float(pos["stop_loss"])  # type: ignore[arg-type]
 
                     try:
                         atr = _fetch_atr(conn, sym, run_date)
@@ -635,9 +635,9 @@ def run_monitor_agent(
             issues_found = 0
             for pos in positions_for_recon:
                 sym = str(pos["symbol"])
-                sl = float(pos["stop_loss"])
-                tp = float(pos["take_profit"])
-                entry = float(pos["entry_price"])
+                sl = float(pos["stop_loss"])  # type: ignore[arg-type]
+                tp = float(pos["take_profit"])  # type: ignore[arg-type]
+                entry = float(pos["entry_price"])  # type: ignore[arg-type]
 
                 is_valid = (
                     sl > 0

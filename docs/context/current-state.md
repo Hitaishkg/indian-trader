@@ -40,9 +40,9 @@
 | Module | Status | Notes |
 |--------|--------|-------|
 | src/agents/risk_agent.py | ✅ Built | Kill switches, position sizing, risk_approvals table |
-| src/agents/execution_agent.py | 📝 Spec written, awaiting approval | Spec: docs/specs/2026-04-10-execution-agent.md |
-| src/agents/monitor_agent.py | 📝 Spec written, awaiting approval | Spec: docs/specs/2026-04-10-monitor-agent.md |
-| src/agents/reporter_agent.py | 📝 Spec written, awaiting approval | Spec: docs/specs/2026-04-10-reporter-agent.md |
+| src/agents/execution_agent.py | ✅ Code review passed | Spec: docs/specs/2026-04-10-execution-agent.md. Checkpoint confirmation uses run_date.isoformat(); math.floor() for all quantity rounding; reads exclusively from risk_approvals APPROVED rows. |
+| src/agents/monitor_agent.py | ✅ Code review passed | Spec: docs/specs/2026-04-10-monitor-agent.md. Stop monotonic guard confirmed; GTT reconciliation on minute%30; IST timestamps via ZoneInfo; kill switch constants imported from risk_agent; stateless entry point. |
+| src/agents/reporter_agent.py | ✅ Code review passed | Spec: docs/specs/2026-04-10-reporter-agent.md |
 
 ## Phase 5–6
 ⬜ Not started
