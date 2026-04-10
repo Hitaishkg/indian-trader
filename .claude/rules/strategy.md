@@ -74,7 +74,7 @@ you give back if the market continues falling.
 - ATR → stop-loss calculation ONLY. Never used as an entry signal.
 
 ### LLM signals (Gemini free tier, run every evening on weekly candidates)
-- Fetches last 48 hours of news via Brave Search MCP (3 queries per stock)
+- Fetches last 48 hours of news via Tavily Search API (3 queries per stock)
 - Synthesises: sentiment (Positive / Negative / Neutral / Mixed) + confidence score
 - Returns actual source URLs — required field, not optional
 - Earnings branch: if a stock reported earnings in the last 5 days →

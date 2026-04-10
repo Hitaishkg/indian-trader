@@ -9,9 +9,9 @@
 | Fundamentals (ROE, D/E, EPS) | Screener.in scraping | yfinance on 3-strike failure | Free |
 | Nifty 50 official P/E, P/B | NSE India website directly | No fallback needed | Free |
 | Factor research validation | IIM Ahmedabad FF-Momentum library | faculty.iima.ac.in/iffm/ | Free |
-| Market news (nightly) | Brave Search MCP | NSE announcements page | Free tier |
-| Earnings transcripts | Brave Search MCP | Flag + fall back to standard news | Free tier |
-| FII/DII flow data | Brave Search MCP query | NSE website direct | Free |
+| Market news (nightly) | Tavily Search API | NSE announcements page | Free tier |
+| Earnings transcripts | Tavily Search API | Flag + fall back to standard news | Free tier |
+| FII/DII flow data | Tavily Search API query | NSE website direct | Free |
 
 ---
 
@@ -109,7 +109,7 @@ FYERS_API_KEY=your_fyers_api_key
 GROQ_API_KEY=your_groq_key
 GEMINI_API_KEY=your_google_ai_studio_key
 GITHUB_PAT=your_github_personal_access_token
-BRAVE_API_KEY=your_brave_search_api_key
+TAVILY_API_KEY=your_tavily_api_key
 TELEGRAM_BOT_TOKEN=your_telegram_bot_token
 TELEGRAM_CHAT_ID=your_telegram_chat_id
 GMAIL_CREDENTIALS=path_to_gmail_oauth_credentials.json
