@@ -201,6 +201,18 @@ groq_confidence = -1.0 means both Groq and Gemini were unavailable; rule-based B
 | approved_at | TEXT NOT NULL | ISO 8601 IST timestamp |
 | UNIQUE(symbol, run_date) | — | One approval decision per symbol per run date |
 
+### execution_checkpoints (written by: src/agents/execution_agent.py)
+| Column | Type | Notes |
+|--------|------|-------|
+| id | INTEGER PRIMARY KEY AUTOINCREMENT | Auto-incrementing row ID |
+| run_date | TEXT NOT NULL | ISO 8601 date for execution (e.g. "2026-04-10") |
+| status | TEXT NOT NULL | "PENDING" (awaiting confirmation), "CONFIRMED" (human approved), or "TIMEOUT" (no response) |
+| symbols | TEXT NOT NULL | JSON list of symbol strings approved for execution |
+| message | TEXT NOT NULL | Full checkpoint notification message sent to human |
+| created_at | TEXT NOT NULL | ISO 8601 IST timestamp when checkpoint was created (09:05 IST approx) |
+| resolved_at | TEXT | ISO 8601 IST timestamp when status changed to CONFIRMED or TIMEOUT; NULL while PENDING |
+| UNIQUE(run_date) | — | One checkpoint per trading day |
+
 ### orders (written by: Execution Agent — Phase 4, step 8)
 | Column | Type | Notes |
 |--------|------|-------|

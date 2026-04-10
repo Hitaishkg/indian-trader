@@ -42,9 +42,9 @@ Zero delivery brokerage. CNC orders with GTT stop-losses.
 | src/execution/auth.py | Shoonya TOTP auto-login | 4 | ⏳ Pending |
 | src/execution/shoonya_broker.py | Shoonya order placement and GTT | 4 | ⏳ Pending |
 | src/agents/risk_agent.py | Kill switch checks, position sizing | 4 | ✅ Built |
-| src/agents/execution_agent.py | Human checkpoint + order placement | 4 | ⏳ Pending |
-| src/agents/monitor_agent.py | Stop-loss loop + GTT reconciliation | 4 | ⏳ Pending |
-| src/agents/reporter_agent.py | Daily P&L report | 4 | ⏳ Pending |
+| src/agents/execution_agent.py | Human checkpoint + order placement | 4 | ✅ Built |
+| src/agents/monitor_agent.py | Stop-loss loop + GTT reconciliation | 4 | ✅ Built |
+| src/agents/reporter_agent.py | Daily P&L report | 4 | ✅ Built |
 | src/agents/orchestrator.py | Python Agent SDK pipeline controller | 4 | ⏳ Pending |
 
 ---

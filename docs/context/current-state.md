@@ -40,12 +40,12 @@
 | Module | Status | Notes |
 |--------|--------|-------|
 | src/agents/risk_agent.py | ✅ Built | Kill switches, position sizing, risk_approvals table |
-| src/agents/execution_agent.py | ✅ Code review passed | Spec: docs/specs/2026-04-10-execution-agent.md. Checkpoint confirmation uses run_date.isoformat(); math.floor() for all quantity rounding; reads exclusively from risk_approvals APPROVED rows. |
-| src/agents/monitor_agent.py | ✅ Code review passed | Spec: docs/specs/2026-04-10-monitor-agent.md. Stop monotonic guard confirmed; GTT reconciliation on minute%30; IST timestamps via ZoneInfo; kill switch constants imported from risk_agent; stateless entry point. |
-| src/agents/reporter_agent.py | ✅ Code review passed | Spec: docs/specs/2026-04-10-reporter-agent.md |
+| src/agents/execution_agent.py | ✅ Built | Checkpoint confirmation uses run_date.isoformat(); math.floor() for all quantity rounding; reads exclusively from risk_approvals APPROVED rows; execution_checkpoints table created on run |
+| src/agents/monitor_agent.py | ✅ Built | Stop monotonic guard confirmed; GTT reconciliation on minute%30; IST timestamps via ZoneInfo; kill switch constants imported from risk_agent; stateless entry point; emergency rescreen at 15:35 IST |
+| src/agents/reporter_agent.py | ✅ Built | Writes daily_pnl and strategy_perf tables; profit_factor=None when no losses; generates reports/YYYY-MM-DD.md; sends summary via both Telegram+Gmail |
 
 ## Phase 5–6
 ⬜ Not started
 
 ## Next Action
-Phase 4 in progress. Next module: src/agents/execution_agent.py — reads risk_approvals, sends human checkpoint via Telegram+email, places CNC orders via PaperTrader.
+Phase 4 in progress. Next module: src/agents/orchestrator.py — Python Agent SDK pipeline controller for all 10 trading agents.

@@ -7,6 +7,18 @@
 
 ---
 
+## [2026-04-10] — Phase 4 Trading Agents (execution + monitor + reporter)
+
+**Built:** execution_agent (human checkpoint + CNC order placement with price validation), monitor_agent (GTT reconciliation + stop tightening + emergency rescreen at 15:35), reporter_agent (daily P&L report + strategy_perf tracking).
+
+**Connects to:** execution reads risk_approvals (APPROVED rows), writes execution_checkpoints + orders (via PaperTrader); monitor reads positions/screener_results/signals/research_reports, writes positions (via PaperTrader.update_stop_loss); reporter reads trades/positions, writes daily_pnl + strategy_perf + reports/.
+
+**Next step:** src/agents/orchestrator.py — Python Agent SDK scheduler for all 10 trading agents.
+
+**Notes:** Checkpoint uses date-string match (content == run_date.isoformat(), not "Y") to prevent stale file auto-approval. profit_factor=None (not 0.0) when no losing trades — stored as NULL in strategy_perf, displayed as "N/A — no losing trades" in markdown. MARKET_CLOSE_MINUTE=45 (not 30) so 15:35 emergency rescreen falls within market hours gate. Stop tightening monotonic guard: only tightens if new_stop > current_stop (prevents loosening). All three agents use ZoneInfo("Asia/Kolkata") for IST timestamps. execution_checkpoints table added with UNIQUE(run_date) constraint. Phase 4 scope: PaperTrader only — no Shoonya API calls in any of these three agents.
+
+---
+
 ## [2026-04-09] — src/agents/risk_agent.py
 
 **Built:** Kill switch gatekeeper + position sizing — reads human_approved watchlist, runs 4 kill switches in priority order, sizes positions with 1%-ATR formula, writes APPROVED/REJECTED to risk_approvals.

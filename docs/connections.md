@@ -629,6 +629,135 @@
   3. win_rate_below_40pct (requires >= 20 trades)
   4. sharpe_below_0.8 (requires >= 20 trades)
 
+## src/agents/execution_agent.py
+
+**Purpose:** Human checkpoint gateway for approved trade execution — reads APPROVED risk_approvals, sends human confirmation request via Telegram + Gmail, polls a checkpoint file for 8 minutes, validates current prices against approved prices, places CNC orders via PaperTrader.
+
+**Public API:**
+- `run_execution_agent(run_date: datetime.date | None = None, db_path_override: str | None = None) -> ExecutionResult` — reads APPROVED risk_approvals for run_date, sends checkpoint notification, polls for confirmation, validates prices, places orders; raises ExecutionAgentError on DB/PaperTrader failures
+- `class ExecutionAgentError(Exception)` — raised on fatal errors; attributes: message (str), phase (str: 'db_read', 'db_write', 'checkpoint', 'paper_trader_init')
+- `class OrderRecord` (frozen dataclass) — symbol, run_date (date), quantity (int), entry_price (float), stop_loss (float), take_profit (float), order_id (int, -1 if not placed), status (str: 'PLACED'/'SKIPPED_SLIPPAGE'/'SKIPPED_RECALC_ZERO'/'SKIPPED_PRICE_FETCH_FAILED'/'SKIPPED_ORDER_ERROR'), deviation_pct (float), recalculated (bool), placed_at (IST datetime | None)
+- `class ExecutionResult` (frozen dataclass) — run_date (date), human_confirmed (bool), safe_mode (bool), safe_mode_reason (str | None), orders_placed (list[OrderRecord]), orders_skipped (list[OrderRecord]), completed_at (IST datetime)
+
+**Reads from:**
+- risk_approvals table: APPROVED rows for run_date with symbol, quantity, entry_price_approx, stop_loss, take_profit, risk_amount, position_size_multiplier
+- watchlist table: context only (rank, sentiment, confidence, scorecard_score for checkpoint message)
+- signals table: atr for recalculation if price deviates > 0.5%
+- live prices: via fetch_ohlcv() with cache_expiry_hours=0 (fresh close price)
+- execution_checkpoints table: to record checkpoint status (PENDING/CONFIRMED/TIMEOUT)
+
+**Writes to:**
+- execution_checkpoints table: one PENDING row per run_date when checkpoint sent; updated to CONFIRMED or TIMEOUT on resolution
+- orders table via PaperTrader.place_order(): PENDING orders written BEFORE placement attempt
+
+**Called by:** orchestrator.py at 09:05 IST every trading morning
+
+**Calls:**
+- PaperTrader.place_order() and PaperTrader.get_pnl(): order placement and portfolio equity check
+- fetch_ohlcv() with cache_expiry_hours=0: fresh price validation
+- send_checkpoint() and send_alert() (src/utils/notifier.py): human notification + confirmation gateway
+- log_agent_action() (src/utils/logger.py): all decisions and price deviations
+
+**Key constants / thresholds relevant to debugging:**
+- `CHECKPOINT_FILE_PREFIX = "/tmp/indian-trader-checkpoint-"` — file path: `/tmp/indian-trader-checkpoint-{run_date}.txt`
+- `CHECKPOINT_POLL_INTERVAL_SECS = 15` — poll frequency while waiting for human confirmation
+- `CHECKPOINT_TIMEOUT_SECS = 480` — 8-minute timeout; no confirmation within window → safe mode
+- `DEVIATION_RECALC_THRESHOLD = 0.005` — 0.5% deviation triggers position recalculation
+- `DEVIATION_SKIP_THRESHOLD = 0.015` — 1.5% deviation → skip trade entirely (SKIPPED_SLIPPAGE)
+- **Confirmation protocol:** checkpoint file content must exactly equal `run_date.isoformat()` (anti-stale guard; not "Y" or any other string)
+- Position recalculation: formula = risk_amount ÷ (ATR × 2), capped at 40% equity and MAX_TRADE_AMOUNT, rounded DOWN with math.floor()
+- No confirmation by 09:13 IST → safe_mode=True, no trades placed, logged as timeout_no_confirmation
+
+---
+
+## src/agents/monitor_agent.py
+
+**Purpose:** Position monitoring and GTT reconciliation during market hours (09:15–15:30 IST) — checks all open positions against stop-loss and take-profit levels every 5 minutes, tightens stops on regime filter or LLM sentiment trigger, runs GTT reconciliation every 30 minutes, detects kill switches (informational only), and triggers emergency screener rescreen at 15:35 if Nifty drops >3%.
+
+**Public API:**
+- `run_monitor_agent(run_date: datetime.date | None = None, current_time: datetime.datetime | None = None, db_path_override: str | None = None) -> MonitorResult` — runs one monitoring tick; stateless per-call (no internal sleep loops); raises MonitorAgentError on fatal DB/PaperTrader failures
+- `class MonitorAgentError(Exception)` — raised on fatal errors; attributes: message (str), phase (str: 'db_read', 'paper_trader_init', 'price_fetch', 'gtt_check', 'gtt_reconciliation', 'stop_tighten', 'emergency_rescreen')
+- `class MonitorResult` (frozen dataclass) — positions_checked (int), exits_triggered (list[dict]), stops_tightened (int), gtt_reconciliation_ran (bool), kill_switch_detected (bool), emergency_rescreen_triggered (bool), completed_at (IST datetime)
+
+**Reads from:**
+- positions table via PaperTrader.get_positions(): all open positions with entry_price, stop_loss, take_profit, current_price
+- trades table: all rows ordered by closed_at ASC (for kill switch drawdown and consecutive loss calculations)
+- signals table: atr for current symbol + run_date (primary), then most recent atr for any date (fallback)
+- screener_results table: most recent regime status (for tightening decision)
+- research_reports table: latest completed_at sentiment/confidence per symbol (for LLM tightening)
+- live prices: via fetch_ohlcv() and fetch_sector_indices() with cache_expiry_hours=0
+
+**Writes to:**
+- positions table via PaperTrader.update_stop_loss(): updated stop_loss when regime or LLM tightening fires
+- trades table via PaperTrader.close_position(): on GTT exit with exit_reason in {STOP_LOSS, TAKE_PROFIT}
+- agent_logs table (via log_agent_action): all monitoring ticks, GTT events, stops tightened, reconciliation findings
+
+**Called by:** orchestrator.py every 5 minutes during 09:15–15:30 IST weekdays
+
+**Calls:**
+- PaperTrader.check_gtts(), PaperTrader.get_positions(), PaperTrader.update_stop_loss(): GTT evaluation and position management
+- fetch_ohlcv(), fetch_sector_indices(): fresh prices for all positions and Nifty 50 (emergency rescreen)
+- run_screener_agent(): at 15:35 IST if Nifty dropped >3% since previous close
+- log_agent_action() (src/utils/logger.py): tick results, exits, stops tightened
+- send_alert() (src/utils/notifier.py): GTT reconciliation issues and emergency rescreen alerts
+
+**Key constants / thresholds relevant to debugging:**
+- `MARKET_OPEN_HOUR = 9`, `MARKET_OPEN_MINUTE = 15` — market opens at 09:15 IST
+- `MARKET_CLOSE_HOUR = 15`, `MARKET_CLOSE_MINUTE = 45` — market closes at 15:45 IST (only close minute used for emergency rescreen gate)
+- `GTT_RECONCILIATION_INTERVAL_MINUTES = 30` — run recon when current_time.minute % 30 == 0 (00, 30 minutes)
+- `EMERGENCY_RESCREEN_HOUR = 15`, `EMERGENCY_RESCREEN_MINUTE = 35` — trigger rescreen check at 15:35 IST only
+- `STOP_LOSS_ATR_NORMAL = 2.0` — normal regime: stop at 2× ATR below entry
+- `STOP_LOSS_ATR_TIGHT = 1.0` — tight regime (BELOW_200DMA or BELOW_200DMA_10DAYS): stop at 1× ATR below entry
+- `TIGHTEN_REGIMES = frozenset({"BELOW_200DMA", "BELOW_200DMA_10DAYS"})` — regimes that trigger stop tightening
+- `LLM_NEGATIVE_CONFIDENCE_THRESHOLD = 0.8` — LLM Negative sentiment must have confidence > 0.8 to trigger tighten
+- `NIFTY_EMERGENCY_DROP_PCT = 3.0` — if close-to-close drop > 3%, run emergency rescreen
+- **Stop tightening monotonic guard:** only tightens if new_stop > current_stop (prevents loosening)
+- **GTT reconciliation:** validates stop_loss < entry_price and take_profit > entry_price; repairs using ATR if invalid (alert sent)
+- **Kill switch detection:** informational only — does NOT halt monitoring of open positions; drawdown and consecutive losses checked regardless of min trades, win_rate and Sharpe only after 20 trades
+
+---
+
+## src/agents/reporter_agent.py
+
+**Purpose:** End-of-day P&L reporting and kill switch status display — reads all trade and position data, computes daily/cumulative P&L, Sharpe ratio, drawdown, win rate, profit factor, writes daily_pnl and strategy_perf tables, generates markdown report, sends summary notification via both Telegram and Gmail.
+
+**Public API:**
+- `run_reporter_agent(report_date: datetime.date | None = None, db_path_override: str | None = None) -> ReporterResult` — computes all metrics, writes to DB and markdown file, sends notification; raises ReporterAgentError on DB/file/notification failures
+- `class ReporterAgentError(Exception)` — raised on fatal errors; attributes: message (str), phase (str: 'db_read', 'db_write', 'report_write', 'notification')
+- `class KillSwitchStatus` (frozen dataclass) — drawdown_status (str), win_rate_status (str), consecutive_losses (int), sharpe_status (str); values: "SAFE"/"APPROACHING"/"TRIGGERED"/"N/A -- insufficient trades"
+- `class DailyReport` (frozen dataclass) — report_date, daily_pnl, cumulative_pnl, unrealized_pnl, equity, peak_equity, drawdown_pct, total_trades, win_count, loss_count, win_rate_pct, sharpe_ratio, profit_factor (float | None), trades_closed_today, wins_today, losses_today, open_positions (list[dict]), open_position_count, kill_switch_status (KillSwitchStatus), computed_at (IST datetime)
+- `class ReporterResult` (frozen dataclass) — report_date (date), report (DailyReport), report_file_path (str), db_written (bool), notification_sent (dict[str, bool]), completed_at (IST datetime)
+
+**Reads from:**
+- trades table: all rows ordered by closed_at ASC with pnl, closed_at (for daily P&L and Sharpe calculation)
+- positions table via PaperTrader.get_positions(): all open positions (for unrealized P&L)
+- PaperTrader.get_pnl(): realized_pnl, unrealized_pnl, total_pnl, trade_count, win_count, loss_count
+
+**Writes to:**
+- daily_pnl table: one INSERT OR REPLACE per report_date with daily_pnl, cumulative_pnl, equity, drawdown_pct, peak_equity, trades_closed_today, win_count_today, open_positions_count
+- strategy_perf table: one INSERT OR REPLACE per metric_date with total_trades, win_rate_pct, sharpe_ratio, max_drawdown_pct, profit_factor (NULL when no losses)
+- reports/ directory: one markdown file per report_date with full summary, metrics table, open positions, kill switch status
+
+**Called by:** orchestrator.py at 15:45 IST every trading day
+
+**Calls:**
+- PaperTrader.get_pnl() and PaperTrader.get_positions(): portfolio equity and open position details
+- log_agent_action() (src/utils/logger.py): completion logs and kill switch warnings
+- send_alert() (src/utils/notifier.py): summary notification to both Telegram and Gmail
+
+**Key constants / thresholds relevant to debugging:**
+- `STARTING_CAPITAL = 10_000.0` — portfolio base for equity and return calculations
+- `KILL_SWITCH_MIN_TRADES = 20` — minimum trades before win_rate and Sharpe checks display (otherwise "N/A")
+- Kill switch approaching thresholds:
+  - `DRAWDOWN_APPROACHING_PCT = 10.0` — approaching at 10%, triggered at 15%
+  - `WIN_RATE_APPROACHING_PCT = 45.0` — approaching at 45%, triggered at 40%
+  - `SHARPE_APPROACHING = 1.0` — approaching at 1.0, triggered at 0.8
+- `CONSECUTIVE_LOSSES_LIMIT = 5` — display consecutive losses up to this count (1:5 ratio)
+- **Sharpe calculation:** annualized (× sqrt(252)), population std dev, daily returns grouped by closed_at date
+- **Drawdown calculation:** (peak_equity - current_equity) / peak_equity × 100
+- **Profit factor:** sum(winning trades) / abs(sum(losing trades)); **returns None when no losses** (NULL in DB, "N/A" in markdown)
+- `REPORTS_DIR = "reports"` — absolute path resolved relative to project root
+
 ---
 
 ## src/data/validator.py
