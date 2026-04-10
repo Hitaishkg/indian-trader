@@ -156,3 +156,25 @@
 - `PaperTrader.get_pnl() -> dict[str, float]` — returns {"realized_pnl", "unrealized_pnl", "total_pnl", "trade_count", "win_count", "loss_count"} aggregated from trades and positions tables
 - `PaperTrader.check_gtts(current_prices: dict[str, float]) -> list[dict[str, object]]` — checks all open positions against stop_loss/take_profit; triggers close_position on hit; updates unrealized P&L on no-hit; never raises; returns list of triggered dicts with keys symbol, exit_price, exit_reason, trade_id
 - `PaperTrader.update_stop_loss(symbol: str, new_stop_loss: float) -> None` — updates stop_loss in positions table for regime/LLM tightening; raises ValueError if no position or new_stop_loss >= entry_price
+
+## dashboard/server.py
+
+- `_db_connect() -> sqlite3.Connection` — opens read-only SQLite connection with `PRAGMA query_only=ON`, WAL pragmas; row_factory = sqlite3.Row
+- `_fetch_agent_activity(conn) -> list[dict]` — last 20 rows from agent_logs; returns [] on sqlite3.Error
+- `_fetch_agent_summary(conn) -> list[dict]` — per-agent log count + last_seen; returns [] on sqlite3.Error
+- `_run_git_log() -> list[dict]` — subprocess git log --oneline -10; returns [] on failure; each item: {hash, message}
+- `_run_pytest_count() -> dict` — subprocess pytest --collect-only -q; parses test count; returns {total, raw_output, error?}
+- `_fetch_regime(conn) -> dict` — reads regime from screener_results latest run_date; maps to {status, badge, label, note}
+- `_fetch_portfolio(conn) -> dict` — realized_pnl, unrealized_pnl, total_equity, open_positions_count
+- `_compute_kill_switches(conn) -> dict` — drawdown (peak equity loop), win_rate, consecutive_losses (last 5), Sharpe; returns full kill switch structure
+- `_fetch_positions(conn) -> list[dict]` — all rows from positions table; returns [] on error
+- `_fetch_signals_today(conn) -> list[dict]` — signals for latest run_date; returns [] on error
+- `_fetch_screener_top5(conn) -> list[dict]` — top 5 from screener_results latest run_date; returns [] on error
+- `_fetch_research_sentiment(conn) -> list[dict]` — latest completed research per symbol; never includes raw_response; returns [] on error
+- `_fetch_watchlist(conn) -> list[dict]` — watchlist for latest run_date; returns [] on error
+- `_fetch_risk_approvals_today(conn, today_str: str) -> list[dict]` — risk_approvals for today; returns [] on sqlite3.OperationalError (table not yet created)
+- `_build_pnl_chart(conn) -> dict` — cumulative P&L and equity_curve lists; returns {labels:[], cumulative_pnl:[], equity_curve:[]} on error
+- `_fetch_trade_history(conn) -> list[dict]` — last 20 trades; returns [] on error
+- `_build_response() -> dict` — assembles full /api/data JSON; always closes conn in finally; returns {updated_at, build, trading}
+- `class DashboardHandler(BaseHTTPRequestHandler)` — GET / serves index.html; GET /api/data returns JSON; log_message overridden to pass (suppresses output); CORS headers on every response
+- `main() -> None` — starts HTTPServer on PORT=8765

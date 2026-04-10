@@ -12,7 +12,7 @@ import math
 import os
 import sqlite3
 import subprocess
-from datetime import datetime, date
+from datetime import datetime
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from typing import Any
 import zoneinfo
@@ -309,7 +309,7 @@ def _run_pytest_count() -> dict[str, Any]:
             timeout=15,
             text=True,
         )
-        stdout_lines = [l for l in result.stdout.strip().splitlines() if l.strip()]
+        stdout_lines = [line for line in result.stdout.strip().splitlines() if line.strip()]
         raw_output = stdout_lines[-1] if stdout_lines else ""
         # Parse e.g. "526 tests collected in 6.78s" or "no tests ran"
         total = 0
@@ -439,17 +439,14 @@ def _compute_kill_switches(conn: sqlite3.Connection) -> dict[str, Any]:
 
     # --- Win rate ---
     wins = 0
-    losses = 0
     try:
         row = conn.execute(
             "SELECT COUNT(*) AS total, SUM(CASE WHEN pnl > 0 THEN 1 ELSE 0 END) AS wins FROM trades"
         ).fetchone()
         if row:
             wins = int(row["wins"] or 0)
-            total_for_wr = int(row["total"] or 0)
-            losses = total_for_wr - wins
     except sqlite3.Error:
-        total_for_wr = 0
+        pass
 
     win_rate_pct = (wins / trade_count * 100.0) if trade_count > 0 else 0.0
     wr_skipped = trade_count < MIN_TRADES_KS
