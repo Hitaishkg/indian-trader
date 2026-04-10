@@ -690,12 +690,12 @@ def test_09_standard_position_sizing(temp_db):
     assert len(result.approved) == 1
     approval = result.approved[0]
     # risk = 10000 * 0.01 = 100
-    # stop_distance = 10 * 2 = 20
-    # quantity = floor(100 / 20) = 5
-    assert approval.quantity == 5
+    # stop_distance_raw = 10 * 2 = 20; 3% cap = 500 * 0.03 = 15 → capped to 15
+    # quantity = floor(100 / 15) = 6
+    assert approval.quantity == 6
     assert approval.entry_price_approx == 500.0
-    assert approval.stop_loss == 480.0  # 500 - 20
-    assert approval.take_profit == 540.0  # 500 + 20*2
+    assert approval.stop_loss == pytest.approx(485.0)  # 500 - 15
+    assert approval.take_profit == pytest.approx(530.0)  # 500 + 15*2
 
 
 def test_10_regime_multiplier_0_5_applied(temp_db):
@@ -722,18 +722,22 @@ def test_10_regime_multiplier_0_5_applied(temp_db):
 
     approval = result.approved[0]
     # risk = 10000 * 0.01 * 0.5 = 50
-    # stop_distance = 10 * 2 = 20
-    # quantity = floor(50 / 20) = 2
-    assert approval.quantity == 2
+    # stop_distance_raw = 10 * 2 = 20; 3% cap = 500 * 0.03 = 15 → capped to 15
+    # quantity = floor(50 / 15) = 3
+    assert approval.quantity == 3
     assert approval.position_size_multiplier == 0.5
 
 
 def test_11_quantity_zero_rejected(temp_db):
-    """Position sizing: quantity < 1 → REJECTED with reason 'insufficient_capital'."""
+    """Position sizing: quantity < 1 → REJECTED with reason 'insufficient_capital'.
+
+    With entry_price=5000 and equity=10000: risk_amount=100, 3% cap=150.
+    stop_distance=min(ATR×2, 150)=150. quantity=floor(100/150)=0 → rejected.
+    """
     db_path = temp_db
 
     insert_watchlist_row(db_path, "HDFC")
-    # Very high ATR relative to capital
+    # High-priced stock: 3% cap (150) exceeds risk_amount (100) → quantity=0
     insert_signal_row(db_path, "HDFC", atr=1000.0)
 
     with patch("src.config.settings.settings", MOCK_SETTINGS), \
@@ -741,7 +745,7 @@ def test_11_quantity_zero_rejected(temp_db):
          patch("src.agents.risk_agent.send_alert") as mock_alert, \
          patch("src.agents.risk_agent.send_info") as mock_info, \
          patch("src.agents.risk_agent.PaperTrader") as mock_pt, \
-         patch("src.agents.risk_agent._fetch_entry_price", return_value=500.0):
+         patch("src.agents.risk_agent._fetch_entry_price", return_value=5000.0):
         mock_fetch.return_value = MagicMock(empty=False)
 
         mock_pt_instance = MagicMock()
@@ -1053,3 +1057,36 @@ def test_21_db_write_failure_raises_error(temp_db):
             run_risk_agent(run_date=RUN_DATE, db_path_override=db_path)
 
         assert exc_info.value.phase == "db_write"
+
+
+def test_22_stop_loss_3pct_cap_applied(temp_db):
+    """Stop-loss 3% hard cap: ATR×2 exceeds 3% of entry → capped at 3%."""
+    db_path = temp_db
+
+    # ATR=5.0, entry=100.0 → ATR×2=10.0 (10% of entry, exceeds 3% cap)
+    # After cap: stop_distance=3.0, stop_loss=97.0, take_profit=106.0
+    # quantity = floor(100.0 / 3.0) = 33
+    insert_watchlist_row(db_path, "HDFC")
+    insert_signal_row(db_path, "HDFC", atr=5.0)
+
+    with patch("src.config.settings.settings", MOCK_SETTINGS), \
+         patch("src.agents.risk_agent.fetch_ohlcv") as mock_fetch, \
+         patch("src.agents.risk_agent.send_alert") as mock_alert, \
+         patch("src.agents.risk_agent.send_info") as mock_info, \
+         patch("src.agents.risk_agent.PaperTrader") as mock_pt, \
+         patch("src.agents.risk_agent._fetch_entry_price", return_value=100.0):
+        mock_fetch.return_value = MagicMock(empty=False)
+
+        mock_pt_instance = MagicMock()
+        mock_pt_instance.get_pnl.return_value = {"total_pnl": 0.0}
+        mock_pt_instance.get_positions.return_value = []
+        mock_pt.return_value = mock_pt_instance
+
+        result = run_risk_agent(run_date=RUN_DATE, db_path_override=db_path)
+
+    assert len(result.approved) == 1
+    approval = result.approved[0]
+    assert approval.approval_status == "APPROVED"
+    assert approval.stop_loss == pytest.approx(97.0)
+    assert approval.take_profit == pytest.approx(106.0)
+    assert approval.quantity == 33

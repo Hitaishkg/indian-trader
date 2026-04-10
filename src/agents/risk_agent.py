@@ -45,6 +45,7 @@ WIN_RATE_KILL_SWITCH_PCT: float = 40.0
 CONSECUTIVE_LOSSES_KILL_SWITCH: int = 5
 SHARPE_KILL_SWITCH: float = 0.8
 KILL_SWITCH_MIN_TRADES: int = 20
+STOP_LOSS_PCT_CAP: float = 0.03   # hard cap: stop never more than 3% below entry
 PRICE_FETCH_LOOKBACK_DAYS: int = 5
 IST: ZoneInfo = ZoneInfo("Asia/Kolkata")
 
@@ -402,6 +403,8 @@ def _size_symbol(
 
     # Step 5 — stop distance
     stop_distance = atr * STOP_LOSS_ATR_MULTIPLIER
+    if entry_price > 0.0:
+        stop_distance = min(stop_distance, entry_price * STOP_LOSS_PCT_CAP)
 
     # Step 6 — raw quantity (floor)
     quantity = math.floor(risk_amount / stop_distance)
