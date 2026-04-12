@@ -20,6 +20,7 @@ Language: Python 3.12. Package manager: uv.
 - MAX_TRADE_AMOUNT=10000 is a hard cap — never exceed in any single trade
 - Strategies go live ONLY after passing ALL backtest gates AND 8-week paper gate
 - data/validator.py must be the FIRST module built in Phase 1 — before everything else
+-After every completed module build, run /compact  before invoking Architect for the next module.
 - Before invoking Architect Agent for any new module:
   1. Run /compact to compress conversation history
   2. Read only docs/context/ files, not full src/ until required

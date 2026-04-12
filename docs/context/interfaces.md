@@ -210,3 +210,15 @@
 - `_build_response() -> dict` — assembles full /api/data JSON; always closes conn in finally; returns {updated_at, build, trading}
 - `class DashboardHandler(BaseHTTPRequestHandler)` — GET / serves index.html; GET /api/data returns JSON; log_message overridden to pass (suppresses output); CORS headers on every response
 - `main() -> None` — starts HTTPServer on PORT=8765
+
+## src/agents/orchestrator.py
+
+- `run_orchestrator(session: str | None = None, run_date: datetime.date | None = None, db_path_override: str | None = None) -> OrchestratorResult` — runs the specified trading session or auto-detects from IST time; never crashes on agent exceptions; raises OrchestratorError only for invalid session or auto-detection failure
+- `class AgentStepResult` — frozen dataclass: agent_name (str), success (bool), error_message (str | None), started_at (datetime, IST), completed_at (datetime, IST)
+- `class OrchestratorResult` — frozen dataclass: session (str), run_date (date), safe_mode (bool), safe_mode_reason (str | None), steps (list[AgentStepResult]), started_at (datetime, IST), completed_at (datetime, IST)
+- `class OrchestratorError(Exception)` — raised only for orchestrator-level failures; attribute: message (str)
+- Constants: `AGENT_NAME="orchestrator"`, `IST=ZoneInfo("Asia/Kolkata")`, `VALID_SESSIONS=frozenset({"evening","morning","monitor","report"})`, `MONITOR_SLEEP_SECONDS=300`
+- Session windows (IST): evening 18:00-23:59, morning 06:00-09:14, monitor 09:15-15:44, report 15:45-17:59
+- Weekday guard: morning/monitor/report skip on weekends; evening skips on Fri/Sat (runs Sun-Thu)
+- Amendment 1: kill_switch_fired → skip execution_agent, log "kill_switch_fired" + "execution_skipped: kill_switch_active", send alert
+- Amendment 2: auto-starts dashboard/server.py on port 8765 if not already running (socket probe); silently ignores all dashboard errors
