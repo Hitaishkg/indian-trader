@@ -43,6 +43,7 @@
 | src/agents/execution_agent.py | ✅ Built | Checkpoint confirmation uses run_date.isoformat(); math.floor() for all quantity rounding; reads exclusively from risk_approvals APPROVED rows; execution_checkpoints table created on run |
 | src/agents/monitor_agent.py | ✅ Built | Stop monotonic guard confirmed; GTT reconciliation on minute%30; IST timestamps via ZoneInfo; kill switch constants imported from risk_agent; stateless entry point; emergency rescreen at 15:35 IST |
 | src/agents/reporter_agent.py | ✅ Built | Writes daily_pnl and strategy_perf tables; profit_factor=None when no losses; generates reports/YYYY-MM-DD.md; sends summary via both Telegram+Gmail |
+| src/agents/orchestrator.py | ✅ Code review passed | Sessions: evening/morning/monitor/report; kill_switch → skip execution (Amendment 1); port 8765 probe → dashboard auto-start (Amendment 2); IST throughout; all type hints and docstrings present |
 
 ## Phase 5–6
 ⬜ Not started
