@@ -1,4 +1,5 @@
 # Decisions Log — Fast Reference
+[2026-04-12] orchestrator.py — kill_switch_fired skips execution_agent entirely (not just no-op); port 8765 socket probe starts dashboard/server.py if not already running
 [2026-04-10] execution_agent.py — checkpoint date-string match (content == run_date.isoformat()); monotonic math.floor() for position sizing; execution_checkpoints table tracks PENDING/CONFIRMED/TIMEOUT per run_date
 [2026-04-10] monitor_agent.py — market hours gate 09:15–15:45; MARKET_CLOSE_MINUTE=45 (not 30) so 15:35 emergency rescreen falls within market hours; stop tightening monotonic guard (new_stop > current_stop only); profit_factor=None (not 0.0) when no losing trades
 [2026-04-10] reporter_agent.py — profit_factor=None when denominator=0; stored as NULL in strategy_perf; displayed as "N/A — no losing trades" in markdown; Sharpe calculated per daily closes only, not intraday ticks

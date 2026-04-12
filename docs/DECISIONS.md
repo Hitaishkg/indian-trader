@@ -7,6 +7,15 @@
 
 ---
 
+## [2026-04-12] — Orchestrator
+
+**Built**: Python Agent SDK orchestrator sequencing all 10 trading agents across 4 daily sessions with error isolation, kill switch enforcement, and dashboard auto-start.
+**Connects to**: Reads/writes all DB tables via agent calls; logs orchestrator own status to agent_logs.
+**Next step**: Phase 4 complete — begin Phase 5: 8 weeks paper trading validation with manual scorecard checks and spot-check audits.
+**Notes**: Amendment 1 — kill_switch_fired skips execution_agent entirely (not just passes empty data), setting safe_mode=True in result. Amendment 2 — port 8765 socket probe starts dashboard/server.py before any session work begins.
+
+---
+
 ## [2026-04-10] — Phase 4 Trading Agents (execution + monitor + reporter)
 
 **Built:** execution_agent (human checkpoint + CNC order placement with price validation), monitor_agent (GTT reconciliation + stop tightening + emergency rescreen at 15:35), reporter_agent (daily P&L report + strategy_perf tracking).

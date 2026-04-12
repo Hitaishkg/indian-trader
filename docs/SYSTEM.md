@@ -45,7 +45,7 @@ Zero delivery brokerage. CNC orders with GTT stop-losses.
 | src/agents/execution_agent.py | Human checkpoint + order placement | 4 | ✅ Built |
 | src/agents/monitor_agent.py | Stop-loss loop + GTT reconciliation | 4 | ✅ Built |
 | src/agents/reporter_agent.py | Daily P&L report | 4 | ✅ Built |
-| src/agents/orchestrator.py | Python Agent SDK pipeline controller | 4 | ⏳ Pending |
+| src/agents/orchestrator.py | Python Agent SDK pipeline controller | 4 | ✅ Built |
 
 ---
 
@@ -122,6 +122,10 @@ WAL mode pragmas applied at every connection open.
 | Groq low confidence (BUY downgraded to HOLD) | `signals WHERE groq_confidence < 0.6 AND groq_confidence >= 0` |
 | Both LLMs unavailable (rule-based BUY kept) | `signals WHERE groq_confidence = -1.0` |
 | Negative sentiment blocking BUY | `signals WHERE skip_reason LIKE '%negative_sentiment%'` |
+| Orchestrator session skipped (weekend) | `agent_logs WHERE agent_name='orchestrator' AND detail LIKE '%weekend%'` |
+| Kill switch fired → execution skipped | `agent_logs WHERE event_type='kill_switch'` then check `orchestrator result.safe_mode=True` and `safe_mode_reason` |
+| Agent step failed (partial) | `agent_logs WHERE agent_name='orchestrator' AND detail LIKE '%agent_step_failed%'` — session continues, other agents run |
+| Dashboard auto-start failed | `agent_logs WHERE agent_name='orchestrator' AND detail LIKE '%dashboard%'` |
 
 ---
 

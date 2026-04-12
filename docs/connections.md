@@ -747,6 +747,46 @@
 
 **Key constants / thresholds relevant to debugging:**
 - `STARTING_CAPITAL = 10_000.0` — portfolio base for equity and return calculations
+
+---
+
+## src/agents/orchestrator.py
+
+**Purpose:** Python Agent SDK orchestrator — sequences all 10 trading agents across 4 daily sessions (evening/morning/monitor/report), detects current session from IST time, isolates errors per agent, enforces kill switch logic (when risk_agent fires, skips execution_agent and sets safe_mode=True), auto-starts dashboard on port 8765, and applies weekday gates to morning/monitor/report sessions.
+
+**Public API:**
+- `run_orchestrator(session: str | None = None, run_date: datetime.date | None = None, db_path_override: str | None = None) -> OrchestratorResult` — executes one orchestration cycle; session auto-detected from IST time if not provided; run_date defaults to today IST; db_path_override optional for testing; raises OrchestratorError on fatal DB/configuration failures
+- `class AgentStepResult(frozen)` — agent_name (str), success (bool), error_message (str | None), started_at (IST datetime), completed_at (IST datetime)
+- `class OrchestratorResult(frozen)` — session (str), run_date (date), safe_mode (bool), safe_mode_reason (str | None), steps (list[AgentStepResult]), started_at (IST datetime), completed_at (IST datetime)
+- `class OrchestratorError(Exception)` — raised on fatal setup/DB failures; attributes: message (str)
+
+**Reads from:**
+- All DB tables (via agent calls): market_data, screener_results, research_reports, watchlist, morning_signals, signals, risk_approvals, orders, positions, trades, daily_pnl, agent_logs
+
+**Writes to:**
+- agent_logs table (via agent calls and orchestrator own logs)
+- Session-specific tables (each agent writes to its own output table)
+
+**Called by:** Windows Task Scheduler / manual CLI invocation / Python scripts
+
+**Calls:**
+- All 10 trading agents: run_data_collector_agent, run_screener_agent, run_research_agent, run_watchlist_agent, run_morning_validator_agent, run_signal_agent, run_risk_agent, run_execution_agent, run_monitor_agent, run_reporter_agent
+- Dashboard auto-start: probes port 8765, spawns `python dashboard/server.py` if port is free
+- log_agent_action() (src/utils/logger.py): orchestrator own status logs
+
+**Key constants / thresholds relevant to debugging:**
+- **Sessions (IST time windows):**
+  - `"evening"` — 18:00–23:59 IST: runs Data Collector → Screener → Research → Watchlist Builder (Monday only)
+  - `"morning"` — 06:00–09:14 IST: runs Morning Validator → Signal Agent → Risk Agent → Execution Agent (weekdays only)
+  - `"monitor"` — 09:15–15:44 IST: runs Monitor Agent every 5 minutes (weekdays only)
+  - `"report"` — 15:45–17:59 IST: runs Reporter Agent once daily (weekdays only)
+- `MONITOR_SLEEP_SECONDS = 300` — 5-minute polling interval for monitor_agent per orchestrator spec
+- `DASHBOARD_PORT = 8765` — socket probe for existing dashboard; spawns dashboard/server.py if port free
+- `WEEKDAY_GATE = {1, 2, 3, 4, 5}` — ISO weekday set (Mon=1 to Fri=5); morning/monitor/report skip on weekends
+- **Kill switch logic:** when risk_agent returns kill_switch_fired=True, orchestrator skips execution_agent entirely (does NOT call it), sets safe_mode=True in OrchestratorResult, and logs the reason
+- **Safe mode reasons:** "kill_switch_fired: {reason}", "execution_timeout", "morning_pipeline_late", "human_checkpoint_timeout"
+- Error isolation: if any single agent fails, that step is recorded with success=False and error_message populated; orchestrator continues to next agent (does NOT halt entire session)
+- All timestamps IST (Asia/Kolkata) via ZoneInfo throughout
 - `KILL_SWITCH_MIN_TRADES = 20` — minimum trades before win_rate and Sharpe checks display (otherwise "N/A")
 - Kill switch approaching thresholds:
   - `DRAWDOWN_APPROACHING_PCT = 10.0` — approaching at 10%, triggered at 15%
