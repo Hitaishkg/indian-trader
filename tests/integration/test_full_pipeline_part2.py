@@ -791,8 +791,7 @@ class TestScenario8LateSignalDeadlineMiss:
         from src.agents.orchestrator import run_orchestrator
         from src.agents.signal_agent import SignalAgentResult
 
-        monkeypatch.setattr("src.agents.orchestrator.settings", MOCK_SETTINGS)
-
+        # orchestrator does not import settings directly — no patch needed
         fake_late_result = SignalAgentResult(
             run_date=datetime.date(2026, 4, 14),
             symbols_processed=0,

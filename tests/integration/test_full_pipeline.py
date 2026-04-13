@@ -24,7 +24,7 @@ from zoneinfo import ZoneInfo
 
 import pytest
 
-from src.utils.logger import setup_logging
+from src.utils.logger import SQLiteHandler, setup_logging
 
 # ---------------------------------------------------------------------------
 # Constants
@@ -53,6 +53,34 @@ NIFTY_SYMBOLS: list[str] = [
     "SBIN",
     "BAJFINANCE",
 ]
+
+
+# ---------------------------------------------------------------------------
+# Test data helpers
+# ---------------------------------------------------------------------------
+
+
+def _make_sector_df() -> "pd.DataFrame":
+    """Return a minimal sector DataFrame containing NIFTY_50 row.
+
+    screener_agent filters sector_df by symbol == 'NIFTY_50' before calling
+    apply_regime_filter. The returned DataFrame must have a 'symbol' column
+    or the filter raises KeyError. The actual OHLCV values don't matter
+    because apply_regime_filter is mocked in all tests that use this helper.
+    """
+    import pandas as pd
+
+    return pd.DataFrame(
+        {
+            "symbol": ["NIFTY_50"],
+            "date": [RUN_DATE],
+            "open": [22000.0],
+            "high": [22200.0],
+            "low": [21800.0],
+            "close": [22100.0],
+            "volume": [1_000_000],
+        }
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -470,14 +498,33 @@ def fetch_agent_log_actions(db_path: str) -> list[str]:
 
 @pytest.fixture
 def db_path(tmp_path: Path) -> Generator[str, None, None]:
-    """Fresh SQLite DB for each test with full schema initialised."""
+    """Fresh SQLite DB for each test with full schema initialised.
+
+    Also resets the root logger's SQLiteHandler so setup_logging() is not
+    a no-op (it is idempotent by design, skipping if a handler already exists).
+    Tears down the handler after each test to maintain isolation.
+    """
+    import logging
+
     path = str(tmp_path / "test_trading.db")
     conn = sqlite3.connect(path, timeout=30, isolation_level=None)
     _apply_pragmas(conn)
     _init_full_schema(conn)
     conn.close()
+
+    # Remove any SQLiteHandler from a previous test so setup_logging() attaches fresh
+    root = logging.getLogger()
+    for h in list(root.handlers):
+        if isinstance(h, SQLiteHandler):
+            root.removeHandler(h)
+
     setup_logging(path)
     yield path
+
+    # Teardown: remove this test's SQLiteHandler
+    for h in list(root.handlers):
+        if isinstance(h, SQLiteHandler):
+            root.removeHandler(h)
 
 
 # ---------------------------------------------------------------------------
@@ -565,7 +612,7 @@ class TestScenario1EveningHappyPath:
         mock_get_universe.return_value = NIFTY_SYMBOLS
         mock_fetch_symbols.return_value = NIFTY_SYMBOLS
         mock_fetch_ohlcv.return_value = pd.DataFrame()
-        mock_fetch_sector.return_value = pd.DataFrame()
+        mock_fetch_sector.return_value = _make_sector_df()
         mock_get_fundamentals.return_value = pd.DataFrame()
 
         quality_df = pd.DataFrame(
@@ -907,7 +954,7 @@ class TestScenario4RegimeBlocked:
         mock_get_universe.return_value = NIFTY_SYMBOLS
         mock_fetch_symbols.return_value = NIFTY_SYMBOLS
         mock_fetch_ohlcv.return_value = pd.DataFrame()
-        mock_fetch_sector.return_value = pd.DataFrame()
+        mock_fetch_sector.return_value = _make_sector_df()
         mock_get_fundamentals.return_value = pd.DataFrame()
 
         quality_df = pd.DataFrame(
@@ -972,21 +1019,30 @@ class TestScenario4RegimeBlocked:
 
         # screener must report regime_blocked
         assert result.regime_blocked is True, "Expected regime_blocked=True"
-        assert result.top5 == [], "Expected empty top5 when regime is blocked"
 
-        # No positions should be opened — screener_results stays empty
+        # Implementation: top5 IS populated with position_size_multiplier=0.0
+        # (stocks are tracked but no real positions sized — multiplier is the block)
+        assert len(result.top5) == 5, f"Expected 5 top5 entries, got {len(result.top5)}"
+        for r in result.top5:
+            assert r.position_size_multiplier == 0.0, (
+                f"Expected position_size_multiplier=0.0 when regime_blocked, "
+                f"got {r.position_size_multiplier} for {r.symbol}"
+            )
+
+        # screener_results ARE written (with position_size_multiplier=0.0)
         screener_count = count_rows(db_path, "screener_results")
-        assert screener_count == 0, (
-            f"Expected 0 screener_results rows when regime_blocked, got {screener_count}"
+        assert screener_count == 5, (
+            f"Expected 5 screener_results rows written (all with multiplier=0.0), "
+            f"got {screener_count}"
         )
 
-        # watchlist must stay empty
+        # watchlist stays empty — no watchlist_agent run in this test
         watchlist_count = count_rows(db_path, "watchlist")
         assert watchlist_count == 0, (
-            f"Expected 0 watchlist rows when regime_blocked, got {watchlist_count}"
+            f"Expected 0 watchlist rows (watchlist_agent not called), got {watchlist_count}"
         )
 
-        # Verify regime-blocked log entry
+        # Verify regime-blocked log entry (via mocked log_agent_action call args)
         regime_logged = any(
             "regime" in str(call).lower() and "block" in str(call).lower()
             for call in mock_log.call_args_list

@@ -106,6 +106,10 @@ class BacktestResult:
         regime_changes: Count of ABOVE<->BELOW 200 DMA transitions.
         regime_blocked_weeks: Count of weeks where regime was
             BELOW_200DMA_10DAYS and new entries were blocked.
+        regime_changes_by_year: Per-calendar-year count of regime transitions.
+            Used to assess 2013-2014 whipsaw behaviour as required by
+            phases.md Phase 2. A count > 8 in a single year indicates
+            excessive whipsawing. Empty dict if no transitions occurred.
         raw_stats: dict containing the full backtesting.py stats output
             plus custom keys for debugging.
         gates_passed: Always False when returned by run_backtest(). Only
@@ -123,6 +127,7 @@ class BacktestResult:
     profit_factor: float
     regime_changes: int
     regime_blocked_weeks: int
+    regime_changes_by_year: dict[int, int] = field(default_factory=dict)
     raw_stats: dict = field(default_factory=dict)
     gates_passed: bool = False
 
@@ -143,6 +148,7 @@ class _Position:
     stop_loss: float
     take_profit: float
     atr_at_entry: float
+    entry_friction: float = 0.0  # INR cost deducted on entry (STT buy + stamp + exchange)
 
 
 @dataclass
@@ -185,6 +191,7 @@ class _PortfolioTracker:
         self.equity_curve: list[float] = [initial_cash]
         self.regime_changes: int = 0
         self.regime_blocked_weeks: int = 0
+        self.regime_changes_by_year: dict[int, int] = {}
         self._prev_regime: str | None = None
 
     def open_position(
@@ -209,7 +216,14 @@ class _PortfolioTracker:
             atr: ATR value at entry (used for stop tightening).
         """
         cost = quantity * entry_price
-        self.cash -= cost
+        # Buy-side transaction costs for CNC delivery on Indian equities (Shoonya):
+        #   STT buy: 0.1% of turnover
+        #   Stamp duty: 0.015% of turnover (buy only)
+        #   Exchange charges (NSE) + SEBI fee: ~0.00345% + 0.0001% ≈ 0.0036%
+        #   Shoonya brokerage: ₹0 for CNC delivery
+        #   Total buy-side: ~0.119% — rounded to 0.0012 (conservative)
+        buy_friction = cost * 0.0012
+        self.cash -= cost + buy_friction
         self.positions[symbol] = _Position(
             symbol=symbol,
             quantity=quantity,
@@ -218,6 +232,7 @@ class _PortfolioTracker:
             stop_loss=stop_loss,
             take_profit=take_profit,
             atr_at_entry=atr,
+            entry_friction=buy_friction,
         )
         log_agent_action(
             agent_name=AGENT_NAME,
@@ -248,8 +263,16 @@ class _PortfolioTracker:
             return
         pos = self.positions.pop(symbol)
         proceeds = pos.quantity * exit_price
-        self.cash += proceeds
-        pnl = (exit_price - pos.entry_price) * pos.quantity
+        # Sell-side transaction costs for CNC delivery on Indian equities (Shoonya):
+        #   STT sell: 0.1% of turnover
+        #   Exchange charges (NSE) + SEBI fee: ~0.00345% + 0.0001% ≈ 0.0036%
+        #   Shoonya brokerage: ₹0 for CNC delivery
+        #   Total sell-side: ~0.104% — rounded to 0.0010 (conservative)
+        sell_friction = proceeds * 0.0010
+        self.cash += proceeds - sell_friction
+        # Net PnL includes both entry and exit friction so profit_factor and
+        # win_rate gates are computed on realistic after-cost returns.
+        pnl = (exit_price - pos.entry_price) * pos.quantity - pos.entry_friction - sell_friction
         self.closed_trades.append(
             _ClosedTrade(
                 symbol=symbol,
@@ -363,21 +386,28 @@ class _PortfolioTracker:
                     result="ok",
                 )
 
-    def record_regime(self, regime: str) -> None:
-        """Track regime transitions.
+    def record_regime(self, regime: str, current_year: int) -> None:
+        """Track regime transitions globally and per calendar year.
 
-        Increments regime_changes on state change.
+        Increments regime_changes on state change. Increments the per-year
+        counter in regime_changes_by_year so 2013-2014 whipsaw behaviour can
+        be assessed as required by phases.md Phase 2.
         Increments regime_blocked_weeks when BELOW_200DMA_10DAYS.
 
         Args:
             regime: Current regime string ("ABOVE_200DMA", "BELOW_200DMA",
                 "BELOW_200DMA_10DAYS").
+            current_year: Calendar year of the current simulation week,
+                used to bucket regime transitions for the per-year breakdown.
         """
         if self._prev_regime is not None and regime != self._prev_regime:
             self.regime_changes += 1
+            self.regime_changes_by_year[current_year] = (
+                self.regime_changes_by_year.get(current_year, 0) + 1
+            )
             log_agent_action(
                 agent_name=AGENT_NAME,
-                action=f"regime_change: {self._prev_regime} -> {regime}",
+                action=f"regime_change: {self._prev_regime} -> {regime} (year={current_year})",
                 result="ok",
             )
         if regime == "BELOW_200DMA_10DAYS":
@@ -559,7 +589,7 @@ class _WeeklyMomentumStrategy(Strategy):  # type: ignore[misc]
             return
 
         # 8. Record regime state
-        self.tracker.record_regime(regime_result.regime)
+        self.tracker.record_regime(regime_result.regime, current_date.year)
 
         # 9. Tighten stops if regime says so
         if regime_result.tighten_stops and regime_result.stop_tighten_symbols:
@@ -995,7 +1025,15 @@ def run_backtest(
             data=nifty_bt_df,
             strategy=_WeeklyMomentumStrategy,
             cash=initial_cash,
-            commission=0,
+            # NOTE: commission here is a NO-OP. All trades are routed through
+            # _PortfolioTracker (open_position / close_position), which bypasses
+            # backtesting.py's built-in order system. Transaction costs are
+            # applied directly in _PortfolioTracker: 0.12% buy-side (STT 0.1% +
+            # stamp 0.015% + exchange ~0.004%) and 0.10% sell-side (STT 0.1% +
+            # exchange ~0.004%). Total round-trip: ~0.22% (no Shoonya brokerage
+            # on CNC delivery). This value is set to 0.001 as documentation of
+            # intent; it has no computational effect.
+            commission=0.001,
             exclusive_orders=False,
         )
         bt_stats = bt.run()
@@ -1026,6 +1064,7 @@ def run_backtest(
                 profit_factor=0.0,
                 regime_changes=tracker.regime_changes,
                 regime_blocked_weeks=tracker.regime_blocked_weeks,
+                regime_changes_by_year=dict(tracker.regime_changes_by_year),
                 raw_stats={},
                 gates_passed=False,
             )
@@ -1090,6 +1129,7 @@ def run_backtest(
         raw_stats["custom_closed_trades"] = len(trades)
         raw_stats["custom_regime_changes"] = tracker.regime_changes
         raw_stats["custom_regime_blocked_weeks"] = tracker.regime_blocked_weeks
+        raw_stats["custom_regime_changes_by_year"] = dict(tracker.regime_changes_by_year)
 
     except Exception as exc:
         raise BacktestError(
@@ -1119,6 +1159,7 @@ def run_backtest(
         profit_factor=profit_factor,
         regime_changes=tracker.regime_changes,
         regime_blocked_weeks=tracker.regime_blocked_weeks,
+        regime_changes_by_year=dict(tracker.regime_changes_by_year),
         raw_stats=raw_stats,
         gates_passed=False,
     )
