@@ -213,7 +213,7 @@
 
 ## src/agents/orchestrator.py
 
-- `run_orchestrator(session: str | None = None, run_date: datetime.date | None = None, db_path_override: str | None = None) -> OrchestratorResult` — runs the specified trading session or auto-detects from IST time; never crashes on agent exceptions; raises OrchestratorError only for invalid session or auto-detection failure
+- `run_orchestrator(session: str | None = None, run_date: datetime.date | None = None, db_path_override: str | None = None, override_time: str | None = None) -> OrchestratorResult` — runs the specified trading session or auto-detects from IST time; never crashes on agent exceptions; raises OrchestratorError only for invalid session, auto-detection failure, or malformed override_time; override_time (HH:MM) replaces IST clock for session detection only — date is unaffected; logged to agent_logs as "override_time: HH:MM"
 - `class AgentStepResult` — frozen dataclass: agent_name (str), success (bool), error_message (str | None), started_at (datetime, IST), completed_at (datetime, IST)
 - `class OrchestratorResult` — frozen dataclass: session (str), run_date (date), safe_mode (bool), safe_mode_reason (str | None), steps (list[AgentStepResult]), started_at (datetime, IST), completed_at (datetime, IST)
 - `class OrchestratorError(Exception)` — raised only for orchestrator-level failures; attribute: message (str)

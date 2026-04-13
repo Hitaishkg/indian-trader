@@ -685,6 +685,7 @@ def run_orchestrator(
     session: str | None = None,
     run_date: datetime.date | None = None,
     db_path_override: str | None = None,
+    override_time: str | None = None,  # HH:MM format, bypasses IST time detection
 ) -> OrchestratorResult:
     """Run the specified trading session or auto-detect based on IST time.
 
@@ -693,18 +694,38 @@ def run_orchestrator(
         run_date: Trading date. Defaults to today (IST) for morning/monitor/report,
                   or next trading day for evening session.
         db_path_override: Override database path for testing.
+        override_time: HH:MM string (e.g. '06:00'). When provided, this time is used
+                       instead of the actual IST clock for session auto-detection.
+                       The actual date is unaffected. Useful for scheduled runs that
+                       start outside the normal session window. Logged to agent_logs.
 
     Returns:
         OrchestratorResult with per-step success/failure and safe_mode flag.
 
     Raises:
         OrchestratorError: If session is invalid or auto-detection finds no matching session.
+        OrchestratorError: If override_time is provided but not in HH:MM format.
     """
     # Amendment 2: start dashboard before anything else
     _maybe_start_dashboard()
 
     now_ist = datetime.datetime.now(IST)
     started_at = now_ist
+
+    # Apply override_time if provided
+    if override_time is not None:
+        try:
+            parsed = datetime.datetime.strptime(override_time, "%H:%M")
+        except ValueError as exc:
+            raise OrchestratorError(
+                f"override_time '{override_time}' is not valid HH:MM format: {exc}"
+            ) from exc
+        now_ist = now_ist.replace(hour=parsed.hour, minute=parsed.minute, second=0, microsecond=0)
+        log_agent_action(
+            agent_name=AGENT_NAME,
+            action=f"override_time: {override_time}",
+            level="INFO",
+        )
 
     # Resolve session
     if session is not None:
