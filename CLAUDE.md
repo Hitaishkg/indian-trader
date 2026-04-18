@@ -101,6 +101,18 @@ cp .env.example .env
 
 ---
 
+- ## Knowledge Graph (graphify)
+
+  graphify-out/GRAPH_REPORT.md contains the full codebase knowledge graph.
+  2,275 nodes, 4,763 edges, 59 communities across 115 files.
+
+  MANDATORY: Before opening any src/ file, read GRAPH_REPORT.md first.
+  Use it to answer: which modules connect, what calls what, where is X defined.
+  Only open source files when graph answer is insufficient.
+
+  God nodes (highest connectivity) = core abstractions of the system.
+  Query: graphify-out/graph.json for specific relationship lookups.
+
 ## Rules files (loaded automatically)
 
 @.claude/rules/strategy.md
