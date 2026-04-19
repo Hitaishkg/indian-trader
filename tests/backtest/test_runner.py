@@ -486,16 +486,16 @@ def test_regime_transition_counting() -> None:
     tracker = _PortfolioTracker(10_000.0)
 
     # Simulate regime transitions
-    tracker.record_regime("ABOVE_200DMA")  # Initial: ABOVE
+    tracker.record_regime("ABOVE_200DMA", 2020)  # Initial: ABOVE
     assert tracker.regime_changes == 0  # No transition yet
 
-    tracker.record_regime("BELOW_200DMA")  # First transition
+    tracker.record_regime("BELOW_200DMA", 2020)  # First transition
     assert tracker.regime_changes == 1
 
-    tracker.record_regime("BELOW_200DMA")  # No transition (same regime)
+    tracker.record_regime("BELOW_200DMA", 2020)  # No transition (same regime)
     assert tracker.regime_changes == 1
 
-    tracker.record_regime("ABOVE_200DMA")  # Second transition
+    tracker.record_regime("ABOVE_200DMA", 2020)  # Second transition
     assert tracker.regime_changes == 2
 
 
