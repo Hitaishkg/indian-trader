@@ -25,7 +25,8 @@ from src.utils.logger import log_agent_action
 # Module-level constants
 # ---------------------------------------------------------------------------
 
-ROE_THRESHOLD: float = 0.15
+ROE_THRESHOLD: float = 0.12  # Relaxed from 0.15 per sensitivity backtest 2026-04-19
+# Evidence: Sharpe 0.544→0.851, DD 12.58%→9.07%, PF 1.203→1.415
 DE_THRESHOLD: float = 1.0
 VOLUME_VALUE_THRESHOLD: float = 20_000_000.0  # 20 crore INR
 PRICE_THRESHOLD: float = 50.0

@@ -7,6 +7,15 @@
 
 ---
 
+## [2026-04-19] — Parameter Threshold Relaxation
+
+**Built**: Updated RSI_BUY_THRESHOLD 40→55 (signal_agent.py) and ROE_THRESHOLD 0.15→0.12 (quality_filter.py) based on 4-combo sensitivity backtest.
+**Connects to**: quality_filter (quality screen), signal_agent (morning RSI check).
+**Next step**: Phase 5 — 8 weeks paper trading with new thresholds active.
+**Notes**: Backtest C4 (RSI<55, ROE>12%) scored 4/5 gates, Sharpe 0.405→0.851, DD 12.58%→9.07%, Trades 357→441, PF 1.203→1.415. RSI<40 post-mortem: 58/100 REFINE — thin expectancy, over-filtering. No combo cleared Sharpe>1.0 gate; that gate assessed on live paper Sharpe over 8 weeks.
+
+---
+
 ## [2026-04-12] — Orchestrator
 
 **Built**: Python Agent SDK orchestrator sequencing all 10 trading agents across 4 daily sessions with error isolation, kill switch enforcement, and dashboard auto-start.

@@ -51,7 +51,8 @@ DEADLINE_HOUR: int = 8
 DEADLINE_MINUTE: int = 50
 
 # Technical thresholds
-RSI_BUY_THRESHOLD: float = 40.0        # RSI < this → BUY technical signal
+RSI_BUY_THRESHOLD: float = 55.0  # Relaxed from 40.0 per sensitivity backtest 2026-04-19
+# Evidence: RSI<40 too restrictive, misses trends, thin universe
 OHLCV_LOOKBACK_DAYS: int = 60          # calendar days of OHLCV to fetch
 
 # Groq
