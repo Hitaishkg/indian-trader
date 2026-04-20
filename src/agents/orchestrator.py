@@ -24,7 +24,7 @@ from src.agents.risk_agent import run_risk_agent
 from src.agents.screener_agent import run_screener_agent
 from src.agents.signal_agent import run_signal_agent
 from src.agents.watchlist_agent import check_watchlist_timeout, run_watchlist_agent
-from src.utils.logger import log_agent_action
+from src.utils.logger import log_agent_action, setup_logging
 from src.utils.notifier import send_alert
 
 # ---------------------------------------------------------------------------
@@ -706,6 +706,7 @@ def run_orchestrator(
         OrchestratorError: If session is invalid or auto-detection finds no matching session.
         OrchestratorError: If override_time is provided but not in HH:MM format.
     """
+    setup_logging()
     # Amendment 2: start dashboard before anything else
     _maybe_start_dashboard()
 

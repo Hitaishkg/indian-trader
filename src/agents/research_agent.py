@@ -433,7 +433,7 @@ def _read_screener_results(
     sql = """
         SELECT symbol, rank
         FROM screener_results
-        WHERE screened_at LIKE ? || '%'
+        WHERE run_date = ?
           AND quality_passed = 1
           AND rank IS NOT NULL
         ORDER BY rank ASC
