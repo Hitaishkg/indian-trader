@@ -771,8 +771,17 @@ def run_execution_agent(
     # Write PENDING checkpoint record
     _write_checkpoint_pending(db_path, run_date, symbols_list, checkpoint_msg)
 
-    # Poll for confirmation
-    confirmed = _poll_checkpoint_file(run_date)
+    # Paper trading: auto-confirm without waiting for human input
+    if settings.paper_trading:
+        confirmed = True
+        log_agent_action(
+            agent_name=AGENT_NAME,
+            action="auto_confirmed: paper_trading_mode",
+            level="INFO",
+            result="ok",
+        )
+    else:
+        confirmed = _poll_checkpoint_file(run_date)
 
     if not confirmed:
         _update_checkpoint_status(db_path, run_date, "TIMEOUT")

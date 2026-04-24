@@ -57,6 +57,27 @@ MOCK_SETTINGS = Settings(
     gmail_credentials=None,
 )
 
+# Non-paper settings — used to test the human checkpoint polling path
+MOCK_SETTINGS_LIVE = Settings(
+    live_trading=False,
+    paper_trading=False,
+    log_level="DEBUG",
+    max_trade_amount=10000,
+    database_url="sqlite:///data/trading.db",
+    shoonya_user="test",
+    shoonya_password="test",
+    shoonya_totp_secret="test",
+    fyers_api_key=None,
+    groq_api_key="test",
+    gemini_api_key="test",
+    github_pat=None,
+    tavily_api_key=None,
+    brave_api_key=None,
+    telegram_bot_token="test",
+    telegram_chat_id="test",
+    gmail_credentials=None,
+)
+
 
 @pytest.fixture
 def temp_db():
@@ -350,11 +371,14 @@ def test_no_approved_trades_safe_mode(temp_db):
 
 
 def test_checkpoint_timeout_safe_mode(temp_db):
-    """Checkpoint timeout (file never appears) → status=TIMEOUT, no trades, alert sent."""
+    """Checkpoint timeout (file never appears) → status=TIMEOUT, no trades, alert sent.
+
+    Uses non-paper settings so the human-confirmation polling path is exercised.
+    """
     insert_risk_approval(temp_db, "INFY")
     insert_watchlist_row(temp_db, "INFY")
 
-    with patch("src.agents.execution_agent.settings", MOCK_SETTINGS):
+    with patch("src.agents.execution_agent.settings", MOCK_SETTINGS_LIVE):
         with patch("src.agents.execution_agent.log_agent_action"):
             with patch("src.agents.execution_agent.send_checkpoint"):
                 with patch("src.agents.execution_agent.send_alert"):
@@ -369,13 +393,16 @@ def test_checkpoint_timeout_safe_mode(temp_db):
 
 
 def test_checkpoint_wrong_date_treated_as_timeout(temp_db):
-    """Checkpoint file contains wrong date → treated as not confirmed, timeout."""
+    """Checkpoint file contains wrong date → treated as not confirmed, timeout.
+
+    Uses non-paper settings so the human-confirmation polling path is exercised.
+    """
     insert_risk_approval(temp_db, "INFY")
     insert_watchlist_row(temp_db, "INFY")
 
     wrong_date = (RUN_DATE - datetime.timedelta(days=1)).isoformat()
 
-    with patch("src.agents.execution_agent.settings", MOCK_SETTINGS):
+    with patch("src.agents.execution_agent.settings", MOCK_SETTINGS_LIVE):
         with patch("src.agents.execution_agent.log_agent_action"):
             with patch("src.agents.execution_agent.send_checkpoint"):
                 with patch("src.agents.execution_agent.send_alert"):
@@ -393,11 +420,14 @@ def test_checkpoint_wrong_date_treated_as_timeout(temp_db):
 
 
 def test_checkpoint_old_format_y_rejected(temp_db):
-    """Checkpoint file contains 'Y' (old format) → NOT accepted, treated as timeout."""
+    """Checkpoint file contains 'Y' (old format) → NOT accepted, treated as timeout.
+
+    Uses non-paper settings so the human-confirmation polling path is exercised.
+    """
     insert_risk_approval(temp_db, "INFY")
     insert_watchlist_row(temp_db, "INFY")
 
-    with patch("src.agents.execution_agent.settings", MOCK_SETTINGS):
+    with patch("src.agents.execution_agent.settings", MOCK_SETTINGS_LIVE):
         with patch("src.agents.execution_agent.log_agent_action"):
             with patch("src.agents.execution_agent.send_checkpoint"):
                 with patch("src.agents.execution_agent.send_alert"):
@@ -734,7 +764,11 @@ def test_multiple_price_deviations(temp_db):
 
 
 def test_checkpoint_file_cleanup_on_success(temp_db):
-    """Checkpoint file is deleted after successful confirmation."""
+    """Checkpoint file is deleted after successful confirmation (non-paper mode).
+
+    In paper mode, polling is skipped so the file is never read or deleted.
+    This test uses MOCK_SETTINGS_LIVE to exercise the polling cleanup path.
+    """
     insert_risk_approval(temp_db, "INFY")
     insert_watchlist_row(temp_db, "INFY")
     insert_signal_row(temp_db, "INFY")
@@ -742,7 +776,7 @@ def test_checkpoint_file_cleanup_on_success(temp_db):
     checkpoint_path = _checkpoint_file_path(RUN_DATE)
     Path(checkpoint_path).write_text(RUN_DATE.isoformat())
 
-    with patch("src.agents.execution_agent.settings", MOCK_SETTINGS):
+    with patch("src.agents.execution_agent.settings", MOCK_SETTINGS_LIVE):
         with patch("src.agents.execution_agent.log_agent_action"):
             with patch("src.agents.execution_agent.send_checkpoint"):
                 with patch("src.agents.execution_agent.send_alert"):
