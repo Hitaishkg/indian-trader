@@ -101,6 +101,9 @@ class Settings:
     telegram_chat_id: str
     gmail_credentials: str | None  # phase-gated: None until Phase 4
 
+    # --- Universe selection ---
+    nifty_universe: str = "nifty200"  # nifty50 | nifty200 | nifty500
+
     def __repr__(self) -> str:
         """Return a string representation with all secret fields masked as '***'.
 
@@ -283,6 +286,19 @@ def load_settings(env_path: str | None = None) -> Settings:
     gmail_credentials = _phase_gated("GMAIL_CREDENTIALS")
 
     # -----------------------------------------------------------------------
+    # NIFTY_UNIVERSE — optional, defaults to nifty200
+    # -----------------------------------------------------------------------
+    _VALID_UNIVERSES: frozenset[str] = frozenset({"nifty50", "nifty200", "nifty500"})
+    nifty_universe_raw = os.environ.get("NIFTY_UNIVERSE", "nifty200").strip().lower()
+    if nifty_universe_raw not in _VALID_UNIVERSES:
+        errors.append(
+            f"NIFTY_UNIVERSE must be one of nifty50/nifty200/nifty500, got: '{nifty_universe_raw}'"
+        )
+        nifty_universe = "nifty200"
+    else:
+        nifty_universe = nifty_universe_raw
+
+    # -----------------------------------------------------------------------
     # Raise if any individual errors were collected
     # -----------------------------------------------------------------------
     if errors:
@@ -314,6 +330,7 @@ def load_settings(env_path: str | None = None) -> Settings:
         telegram_bot_token=telegram_bot_token,
         telegram_chat_id=telegram_chat_id,
         gmail_credentials=gmail_credentials,
+        nifty_universe=nifty_universe,
     )
 
 

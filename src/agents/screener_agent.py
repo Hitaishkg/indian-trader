@@ -24,7 +24,7 @@ from dataclasses import dataclass
 from zoneinfo import ZoneInfo
 
 from src.config.settings import settings
-from src.data.fetcher import FetchError, fetch_nifty50_symbols, fetch_ohlcv, fetch_sector_indices
+from src.data.fetcher import FetchError, fetch_nifty50_symbols, fetch_nifty200_symbols, fetch_ohlcv, fetch_sector_indices
 from src.data.fundamentals import FundamentalsError, get_fundamentals_for_date, get_nifty_universe_for_year
 from src.strategy.momentum import compute_momentum
 from src.strategy.quality_filter import apply_quality_filter
@@ -318,20 +318,21 @@ def run_screener_agent(
     _setup_table(db_path)
 
     # ------------------------------------------------------------------
-    # Step 1 — Fetch Nifty universe
+    # Step 1 — Fetch symbol universe
     # ------------------------------------------------------------------
-    nifty_symbols: list[str] = get_nifty_universe_for_year(run_date.year)
-    if not nifty_symbols and run_date.year > 2023:
-        log_agent_action(
-            agent_name=AGENT_NAME,
-            action=f"universe_year_fallback: year {run_date.year} > 2023, using fetch_nifty50_symbols()",
-            level="WARNING",
-        )
-        nifty_symbols = fetch_nifty50_symbols()
+    if run_date.year <= 2023:
+        # Historical backtest: use hardcoded Nifty 50 constituent data
+        nifty_symbols = get_nifty_universe_for_year(run_date.year)
+    else:
+        # Live paper/real trading: dispatch by configured universe
+        if settings.nifty_universe == "nifty200":
+            nifty_symbols = fetch_nifty200_symbols()
+        else:
+            nifty_symbols = fetch_nifty50_symbols()
 
     log_agent_action(
         agent_name=AGENT_NAME,
-        action=f"universe_fetched: {len(nifty_symbols)} symbols",
+        action=f"universe_fetched: {len(nifty_symbols)} symbols ({settings.nifty_universe})",
         level="INFO",
     )
 

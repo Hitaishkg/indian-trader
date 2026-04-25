@@ -260,8 +260,10 @@ class TestScreenerAgent:
         """Scenario 1: Happy path with 5 quality stocks and ABOVE_200DMA regime."""
         # Setup
         mock_settings.database_url = f"sqlite:///{temp_db}"
+        mock_settings.nifty_universe = "nifty50"
         nifty_universe = [f"STOCK{i}" for i in range(1, 51)]
         mock_get_universe.return_value = nifty_universe
+        mock_fetch_symbols.return_value = nifty_universe
         mock_fetch_ohlcv.return_value = _make_ohlcv_df(nifty_universe)
         mock_fetch_sector.return_value = _make_sector_df()
         mock_get_fundamentals.return_value = _make_fundamentals_df(nifty_universe)
