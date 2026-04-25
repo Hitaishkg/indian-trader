@@ -39,7 +39,7 @@ from src.utils.notifier import send_alert, send_info
 AGENT_NAME: str = "screener_agent"
 OHLCV_LOOKBACK_DAYS: int = 400
 MIN_UNIVERSE_SIZE: int = 3          # mirrors quality_filter.MIN_UNIVERSE_SIZE
-MAX_TOP_N: int = 5
+MAX_TOP_N: int = 10
 MOMENTUM_TIEBREAKER_PCT: float = 2.0  # documented here; enforcement is inside compute_momentum
 
 # WAL pragmas (applied to every SQLite connection)

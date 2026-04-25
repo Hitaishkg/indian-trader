@@ -507,7 +507,7 @@ def _read_screener_results(
           AND quality_passed = 1
           AND rank IS NOT NULL
         ORDER BY rank ASC
-        LIMIT 5
+        LIMIT 10
     """
     cursor = conn.execute(sql, (run_date.isoformat(),))
     rows = cursor.fetchall()
