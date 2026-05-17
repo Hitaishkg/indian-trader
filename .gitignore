@@ -29,3 +29,6 @@ reports/
 Thumbs.db
 gmail_credentials.json
 token.json
+
+# Local reference docs
+ORCHESTRATION_MAP.md
