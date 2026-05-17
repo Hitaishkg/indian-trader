@@ -48,7 +48,7 @@ MOCK_SETTINGS = Settings(
     live_trading=False,
     paper_trading=True,
     log_level="DEBUG",
-    max_trade_amount=10000,
+    max_trade_amount=100000,
     database_url="sqlite:///data/trading.db",
     shoonya_user="test",
     shoonya_password="test",
@@ -187,7 +187,7 @@ def _make_patches():
 
 
 def test_no_trades_no_positions(temp_db):
-    """Test: no trades, no positions → daily_pnl=0.0, cumulative_pnl=0.0, equity=10000.0, drawdown=0.0."""
+    """Test: no trades, no positions → daily_pnl=0.0, cumulative_pnl=0.0, equity=100000.0, drawdown=0.0."""
     with patch("src.agents.reporter_agent.settings", MOCK_SETTINGS):
         with patch("src.agents.reporter_agent.log_agent_action"):
             with patch("src.agents.reporter_agent.send_alert") as mock_alert:
@@ -201,7 +201,7 @@ def test_no_trades_no_positions(temp_db):
 
     assert result.report.daily_pnl == 0.0
     assert result.report.cumulative_pnl == 0.0
-    assert result.report.equity == 10000.0
+    assert result.report.equity == 100000.0
     assert result.report.drawdown_pct == 0.0
     assert result.report.total_trades == 0
     assert result.report.open_position_count == 0
@@ -251,7 +251,7 @@ def test_single_winning_trade_closed_today(temp_db):
 
     assert result.report.daily_pnl == 100.0
     assert result.report.cumulative_pnl == 100.0
-    assert result.report.equity == 10100.0
+    assert result.report.equity == 100100.0
     assert result.report.total_trades == 1
     assert result.report.win_count == 1
     assert result.report.win_rate_pct == 100.0
@@ -628,9 +628,9 @@ def test_drawdown_from_peak_equity(temp_db):
                         )
 
     assert result.report.cumulative_pnl == 100.0
-    assert result.report.equity == 10100.0
-    assert result.report.peak_equity == 10200.0
-    assert abs(result.report.drawdown_pct - 0.98) < 0.01
+    assert result.report.equity == 100100.0
+    assert result.report.peak_equity == 100200.0
+    assert abs(result.report.drawdown_pct - 0.10) < 0.01
 
 
 def test_sharpe_computed_with_daily_grouping(temp_db):
@@ -958,7 +958,7 @@ def test_daily_pnl_table_created_and_row_written(temp_db):
     assert row is not None
     assert row["daily_pnl"] == 100.0
     assert row["cumulative_pnl"] == 100.0
-    assert row["equity"] == 10100.0
+    assert row["equity"] == 100100.0
     assert row["drawdown_pct"] == 0.0
 
 
@@ -1160,7 +1160,7 @@ def test_report_file_contains_correct_pnl_figures(temp_db, tmp_path):
         content = f.read()
 
     assert "100.00" in content  # daily_pnl
-    assert "10100.00" in content  # equity
+    assert "100100.00" in content  # equity
 
 
 def test_report_shows_na_when_profit_factor_is_none(temp_db, tmp_path):
@@ -1372,7 +1372,7 @@ def test_zero_trades_produces_valid_report(temp_db, tmp_path):
                     )
 
     assert result.report.total_trades == 0
-    assert result.report.equity == 10000.0
+    assert result.report.equity == 100000.0
     with open(result.report_file_path, "r", encoding="utf-8") as f:
         content = f.read()
     assert len(content) > 0
@@ -1467,4 +1467,4 @@ def test_very_large_pnl_values_handled(temp_db):
                         )
 
     assert result.report.cumulative_pnl == 40000.0
-    assert result.report.equity == 50000.0
+    assert result.report.equity == 140000.0

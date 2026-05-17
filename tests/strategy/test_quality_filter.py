@@ -101,7 +101,7 @@ def build_ohlcv():
                     "high": close + np.random.uniform(0, 3),
                     "low": close - np.random.uniform(0, 3),
                     "close": close,
-                    "volume": int(np.random.uniform(100000, 500000)),
+                    "volume": int(np.random.uniform(500000, 1500000)),
                 }
                 rows.append(row)
 
@@ -551,8 +551,9 @@ def test_pct_from_52w_high_calculation(mock_log, build_fundamentals, build_ohlcv
             else:
                 # Dummy symbols: constant price
                 close = 500.0
-            # Volume must be high enough: close * volume > 20 crore
-            volume = 300000
+            # Volume must be high enough: close * volume > 200,000,000 (₹20 crore)
+            # At close=500: need volume > 400,000 — use 500,000 to be safe
+            volume = 500000
             rows.append(
                 {
                     "symbol": symbol,
@@ -604,8 +605,8 @@ def test_avg_daily_value_uses_lookback(mock_log, build_fundamentals, build_ohlcv
                 # Dummy symbols: constant price
                 close = 500.0
             # Volume must be high enough to meet threshold at lower prices
-            # At close=200, volume needs > 20_000_000 / 200 = 100_000
-            volume = 150000
+            # At close=200, volume needs > 200_000_000 / 200 = 1_000_000
+            volume = 1500000
             rows.append(
                 {
                     "symbol": symbol,

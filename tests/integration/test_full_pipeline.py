@@ -746,14 +746,14 @@ class TestScenario2KillSwitchFires:
         seed_signal_row(db_path, "RELIANCE", atr=20.0, signal_type="BUY")
 
         # Seed trades to force drawdown > 15%.
-        # Starting capital = 10,000. Peak needs to rise first, then drop.
-        # 3 winning trades bring peak to ~10,600.
-        # Then losses to bring equity below 10,600 * 0.85 = 9,010.
+        # Starting capital = 100,000. Peak needs to rise first, then drop.
+        # 3 winning trades bring peak to ~103,000.
+        # Then losses to bring equity below 103,000 * 0.85 = 87,550.
         for _ in range(3):
-            seed_trade_row(db_path, pnl=200.0)
-        # 8 × -300 = -2,400 loss → equity ~ 10,600 - 2,400 = 8,200 → drawdown > 15%
-        for _ in range(8):
-            seed_trade_row(db_path, pnl=-300.0)
+            seed_trade_row(db_path, pnl=1000.0)
+        # 10 × -2000 = -20,000 loss → equity ~ 103,000 - 20,000 = 83,000 → drawdown ~19%
+        for _ in range(10):
+            seed_trade_row(db_path, pnl=-2000.0)
 
         risk_result = run_risk_agent(run_date=RUN_DATE, db_path_override=db_path)
 

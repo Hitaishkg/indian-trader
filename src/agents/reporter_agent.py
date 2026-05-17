@@ -30,7 +30,7 @@ from src.utils.notifier import send_alert
 # ---------------------------------------------------------------------------
 
 AGENT_NAME: str = "reporter_agent"
-STARTING_CAPITAL: float = 10_000.0
+STARTING_CAPITAL: float = 100_000.0
 KILL_SWITCH_MIN_TRADES: int = 20
 DRAWDOWN_APPROACHING_PCT: float = 10.0
 DRAWDOWN_TRIGGERED_PCT: float = 15.0
