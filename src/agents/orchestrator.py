@@ -16,6 +16,7 @@ from dataclasses import dataclass
 from typing import Any, Callable
 from zoneinfo import ZoneInfo
 
+from src.agents.data_collector_agent import DataCollectorError, run_data_collector_agent
 from src.agents.execution_agent import run_execution_agent
 from src.agents.monitor_agent import run_monitor_agent
 from src.agents.reporter_agent import run_reporter_agent
@@ -183,12 +184,24 @@ def _run_step(
 
 
 def _run_data_collection(run_date: datetime.date, db_path_override: str | None) -> None:
-    """TODO placeholder for data_collector_agent. Logs skip."""
-    log_agent_action(
-        agent_name=AGENT_NAME,
-        action="placeholder_skip: data_collector_agent",
-        level="WARNING",
-    )
+    """Refresh fundamentals_history for the full Nifty 200 universe.
+
+    Delegates to run_data_collector_agent(). DataCollectorError is non-fatal at the
+    orchestrator level — a coverage failure sends its own alert but the evening session
+    continues so the screener can still run on whatever data is available.
+
+    Args:
+        run_date: The trading date for this evening session.
+        db_path_override: Ignored — data_collector_agent reads database_url from settings.
+    """
+    try:
+        run_data_collector_agent(run_date=run_date)
+    except DataCollectorError as exc:
+        log_agent_action(
+            agent_name=AGENT_NAME,
+            action=f"data_collector_failed: phase={exc.phase} — {exc.message}",
+            level="ERROR",
+        )
 
 
 def _run_morning_validator(run_date: datetime.date) -> None:
