@@ -460,17 +460,21 @@ def test_fetch_historical_stores_rows(tmp_db, mock_settings):
 
 def test_fetch_historical_cache_hit(tmp_db, mock_settings):
     """Test that fresh cached data (< 45 days) skips HTTP when force_refresh=False."""
+    from zoneinfo import ZoneInfo
+    fresh_ts = (
+        datetime.datetime.now(ZoneInfo("Asia/Kolkata")) - datetime.timedelta(days=10)
+    ).isoformat()
     conn = _init_historical_tables(tmp_db)
     try:
-        # Insert fresh data
+        # Insert fresh data (10 days ago — well within the 45-day window)
         conn.execute(
             """
             INSERT INTO fundamentals_history
             (symbol, fiscal_year, roe, debt_to_equity, eps_positive,
              data_source, data_quality, fetched_at_ist)
-            VALUES ('TCS', 2020, 0.22, 0.35, 1, 'screener', 'clean',
-                    '2026-03-25T10:00:00+05:30')
-            """
+            VALUES ('TCS', 2020, 0.22, 0.35, 1, 'screener', 'clean', ?)
+            """,
+            (fresh_ts,),
         )
         conn.commit()
         conn.close()

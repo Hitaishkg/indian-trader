@@ -65,6 +65,30 @@ MOCK_SETTINGS = Settings(
     gmail_credentials=None,
 )
 
+# Settings with paper_trading=False — needed for timeout tests.
+# The execution agent auto-confirms when paper_trading=True, bypassing the
+# checkpoint polling loop entirely. Timeout behavior is only reachable when
+# paper_trading=False (i.e. the agent must wait for a real file-based confirmation).
+MOCK_SETTINGS_LIVE_CONFIRM = Settings(
+    live_trading=False,
+    paper_trading=False,
+    log_level="DEBUG",
+    max_trade_amount=10000,
+    database_url="sqlite:///data/trading.db",
+    shoonya_user="test_user",
+    shoonya_password="test_pass",
+    shoonya_totp_secret="test_totp",
+    fyers_api_key=None,
+    groq_api_key="test_groq_key",
+    gemini_api_key="test_gemini_key",
+    github_pat=None,
+    tavily_api_key=None,
+    brave_api_key=None,
+    telegram_bot_token="test_telegram_token",
+    telegram_chat_id="test_chat_id",
+    gmail_credentials=None,
+)
+
 
 # ---------------------------------------------------------------------------
 # Fixtures
@@ -1074,7 +1098,10 @@ class TestScenario10WatchlistTimeout:
         conn.commit()
         conn.close()
 
-        monkeypatch.setattr("src.agents.execution_agent.settings", MOCK_SETTINGS)
+        # Use MOCK_SETTINGS_LIVE_CONFIRM (paper_trading=False) so the agent enters the
+        # checkpoint polling loop rather than auto-confirming. Timeout behavior is
+        # only reachable when paper_trading=False.
+        monkeypatch.setattr("src.agents.execution_agent.settings", MOCK_SETTINGS_LIVE_CONFIRM)
 
         # Ensure no checkpoint file exists (no human response)
         checkpoint_file = Path(f"/tmp/indian-trader-checkpoint-{run_date.isoformat()}.txt")
@@ -1165,7 +1192,8 @@ class TestScenario10WatchlistTimeout:
         conn.commit()
         conn.close()
 
-        monkeypatch.setattr("src.agents.execution_agent.settings", MOCK_SETTINGS)
+        # Use MOCK_SETTINGS_LIVE_CONFIRM (paper_trading=False) — same reason as above.
+        monkeypatch.setattr("src.agents.execution_agent.settings", MOCK_SETTINGS_LIVE_CONFIRM)
 
         checkpoint_file = Path(f"/tmp/indian-trader-checkpoint-{run_date.isoformat()}.txt")
         if checkpoint_file.exists():

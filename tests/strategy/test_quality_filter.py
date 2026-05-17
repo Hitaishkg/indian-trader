@@ -160,10 +160,10 @@ def test_output_columns_complete(mock_log, build_fundamentals, build_ohlcv):
 
 @patch("src.strategy.quality_filter.log_agent_action")
 def test_roe_below_threshold(mock_log, build_fundamentals, build_ohlcv):
-    """ROE=0.14 (below 0.15) — stock excluded."""
+    """ROE=0.10 (below current threshold of 0.12) — stock excluded."""
     fund_df = build_fundamentals(
         ["RELIANCE", "TCS", "LOW_ROE", "HDFC", "ICICI"],
-        {"LOW_ROE": {"roe": 0.14}},
+        {"LOW_ROE": {"roe": 0.10}},
     )
     ohlcv_df = build_ohlcv(["RELIANCE", "TCS", "LOW_ROE", "HDFC", "ICICI"])
 
