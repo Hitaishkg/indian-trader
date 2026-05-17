@@ -427,9 +427,14 @@ def fetch_ohlcv(
             jd_error = str(exc)
             logger.error("jugaad-data failed for %s: %s", symbol, jd_error)
 
-        # Step 5: Both sources failed
-        logger.error("All sources failed for %s", symbol)
-        raise FetchError(symbol, yfinance_error=yf_error, jugaad_error=jd_error)
+        # Step 5: Both sources failed — skip this symbol and continue
+        logger.warning(
+            "All sources failed for %s — skipping symbol (will not appear in results)",
+            symbol,
+        )
+
+    if not frames:
+        raise FetchError("all_symbols", yfinance_error="no symbols succeeded", jugaad_error=None)
 
     combined = pd.concat(frames, ignore_index=True)
     combined = combined.sort_values(["symbol", "date"]).reset_index(drop=True)
@@ -508,6 +513,7 @@ def fetch_nifty200_symbols() -> list[str]:
             row["Symbol"].strip()
             for row in csv.DictReader(io.StringIO(resp.text))
             if row.get("Symbol", "").strip()
+            and not row["Symbol"].strip().upper().startswith("DUMMY")
         ]
         if len(symbols) >= 150:
             logger.info("fetch_nifty200_symbols: fetched %d symbols live", len(symbols))
