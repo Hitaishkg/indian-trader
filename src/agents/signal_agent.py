@@ -302,6 +302,7 @@ def run_signal_agent(
             symbols=target_symbols,
             start_date=start_date,
             end_date=run_date,
+            cache_expiry_hours=0,
         )
     except (FetchError, ValueError) as exc:
         raise SignalAgentError(

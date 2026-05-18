@@ -211,6 +211,16 @@
 - `class DashboardHandler(BaseHTTPRequestHandler)` — GET / serves index.html; GET /api/data returns JSON; log_message overridden to pass (suppresses output); CORS headers on every response
 - `main() -> None` — starts HTTPServer on PORT=8765
 
+## src/agents/morning_validator_agent.py
+
+- `run_morning_validator_agent(run_date: datetime.date | None = None, db_path_override: str | None = None) -> MorningValidatorResult` — reads human-approved watchlist, fetches 12h news per stock via Tavily, calls Gemini for material-event detection, fetches fresh OHLCV, re-confirms regime, writes survivors to morning_signals; hard deadline 08:15 IST → safe mode if exceeded; raises MorningValidatorError on fatal failures
+- `class MorningValidatorResult` — frozen dataclass: run_date (date), watchlist_size (int), validated_count (int), removed_count (int), removal_reasons (list[str]), regime_confirmed (bool), regime_now (str), safe_mode (bool), completed_at (IST datetime)
+- `class MorningValidatorError(Exception)` — raised on fatal failures; attributes: message (str), phase (str: 'watchlist_read', 'news_fetch', 'ohlcv_fetch', 'regime_fetch', 'db_write', 'config')
+- `class MaterialEventVerdict(BaseModel)` — Pydantic model for Gemini structured output: is_material (bool), event_type (Literal[...]), reasoning (str)
+- Constants: `AGENT_NAME="morning_validator_agent"`, `DEADLINE_HOUR=8`, `DEADLINE_MINUTE=15`, `NEWS_LOOKBACK_HOURS=12`, `TAVILY_MAX_RESULTS=8`, `TAVILY_REQUEST_DELAY=0.5`, `GEMINI_MODEL="gemini-2.5-flash"`, `GEMINI_TIMEOUT_SECONDS=20`, `OHLCV_LOOKBACK_DAYS=5`, `REGIME_LOOKBACK_DAYS=400`, `MATERIAL_EVENT_KEYWORDS` (tuple of 20 phrases)
+- DB: writes to morning_signals (INSERT OR REPLACE on UNIQUE(symbol, run_date)); reads from watchlist (human_approved=1) and screener_results (prior regime)
+- morning_signals DDL: id AUTOINCREMENT, symbol, run_date, latest_price REAL, regime TEXT, position_size_multiplier REAL, overnight_news_checked INTEGER (1/0), removal_reason TEXT (always NULL for written rows), validated_at TEXT; UNIQUE(symbol, run_date)
+
 ## src/agents/orchestrator.py
 
 - `run_orchestrator(session: str | None = None, run_date: datetime.date | None = None, db_path_override: str | None = None, override_time: str | None = None) -> OrchestratorResult` — runs the specified trading session or auto-detects from IST time; never crashes on agent exceptions; raises OrchestratorError only for invalid session, auto-detection failure, or malformed override_time; override_time (HH:MM) replaces IST clock for session detection only — date is unaffected; logged to agent_logs as "override_time: HH:MM"

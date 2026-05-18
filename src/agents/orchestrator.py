@@ -194,6 +194,7 @@ def _run_data_collection(run_date: datetime.date, db_path_override: str | None) 
         run_date: The trading date for this evening session.
         db_path_override: Ignored — data_collector_agent reads database_url from settings.
     """
+    _ = db_path_override  # accepted for _run_step compatibility; agent reads settings directly
     try:
         run_data_collector_agent(run_date=run_date)
     except DataCollectorError as exc:
@@ -204,13 +205,20 @@ def _run_data_collection(run_date: datetime.date, db_path_override: str | None) 
         )
 
 
-def _run_morning_validator(run_date: datetime.date) -> None:
-    """TODO placeholder for morning_validator_agent. Logs skip."""
-    log_agent_action(
-        agent_name=AGENT_NAME,
-        action="placeholder_skip: morning_validator_agent",
-        level="WARNING",
-    )
+def _run_morning_validator(
+    run_date: datetime.date,
+    db_path_override: str | None = None,
+) -> None:
+    """Delegate to morning_validator_agent."""
+    from src.agents.morning_validator_agent import MorningValidatorError, run_morning_validator_agent
+    try:
+        run_morning_validator_agent(run_date=run_date, db_path_override=db_path_override)
+    except MorningValidatorError as exc:
+        log_agent_action(
+            agent_name=AGENT_NAME,
+            action=f"morning_validator_failed: phase={exc.phase} — {exc.message}",
+            level="ERROR",
+        )
 
 
 def _safe_send_alert(subject: str, message: str) -> None:
