@@ -275,58 +275,66 @@ def count_watchlist_rows(db_path: str, run_date: datetime.date) -> int:
 
 
 def test_01_happy_path_3_proceed_all_approved(seeded_db, monkeypatch):
-    """Scenario 1: 3 PROCEED candidates, human approves all."""
+    """Scenario 1: 3 PROCEED candidates, human approves all (live trading path)."""
     db_path = seeded_db
 
-    # Seed: 3 screener results with Positive sentiment research
-    now = datetime.datetime.now(tz=IST)
-    for i, symbol in enumerate(["HDFC", "TCS", "INFY"], start=1):
-        insert_screener_result(
-            db_path,
-            symbol,
-            rank=i,
-            momentum_score=10.0 - i,
-            regime="ABOVE_200DMA",
-            position_size_multiplier=1.0,
-        )
-        insert_research_report(
-            db_path,
-            symbol,
-            sentiment="Positive",
-            confidence=0.9,
-            source_urls=["https://example.com/1"],
-            completed_at=now,
-        )
+    # Force live-trading path so human approval is required (not auto-approved).
+    # Settings is a frozen dataclass; bypass via object.__setattr__ and restore in finally.
+    import src.agents.watchlist_agent as wa_module
+    object.__setattr__(wa_module.settings, "paper_trading", False)
 
-    # Patch notifiers
-    with patch("src.agents.watchlist_agent.send_checkpoint") as mock_checkpoint:
-        mock_checkpoint.return_value = {"telegram": True, "gmail": True}
+    try:
+        # Seed: 3 screener results with Positive sentiment research
+        now = datetime.datetime.now(tz=IST)
+        for i, symbol in enumerate(["HDFC", "TCS", "INFY"], start=1):
+            insert_screener_result(
+                db_path,
+                symbol,
+                rank=i,
+                momentum_score=10.0 - i,
+                regime="ABOVE_200DMA",
+                position_size_multiplier=1.0,
+            )
+            insert_research_report(
+                db_path,
+                symbol,
+                sentiment="Positive",
+                confidence=0.9,
+                source_urls=["https://example.com/1"],
+                completed_at=now,
+            )
 
-        result = run_watchlist_agent(run_date=RUN_DATE)
+        # Patch notifiers
+        with patch("src.agents.watchlist_agent.send_checkpoint") as mock_checkpoint:
+            mock_checkpoint.return_value = {"telegram": True, "gmail": True}
 
-    # Assertions
-    assert result.proceed_count == 3
-    assert result.skipped_count == 0
-    assert result.candidates_evaluated == 3
-    assert set(result.approved_symbols) == {"HDFC", "TCS", "INFY"}
-    assert result.human_responded is False
+            result = run_watchlist_agent(run_date=RUN_DATE)
 
-    # All 3 rows written with human_approved=0, approval_source=NULL
-    for symbol in ["HDFC", "TCS", "INFY"]:
-        row = read_watchlist_row(db_path, symbol, RUN_DATE)
-        assert row is not None
-        assert row[1] == "PROCEED"  # combined_decision
-        assert row[9] == 0  # human_approved = 0
+        # Assertions
+        assert result.proceed_count == 3
+        assert result.skipped_count == 0
+        assert result.candidates_evaluated == 3
+        assert set(result.approved_symbols) == {"HDFC", "TCS", "INFY"}
+        assert result.human_responded is False
 
-    # Now human approves all three
-    for symbol in ["HDFC", "TCS", "INFY"]:
-        record_human_approval(symbol, RUN_DATE, approved=True)
+        # All 3 rows written with human_approved=0, approval_source=NULL
+        for symbol in ["HDFC", "TCS", "INFY"]:
+            row = read_watchlist_row(db_path, symbol, RUN_DATE)
+            assert row is not None
+            assert row[1] == "PROCEED"  # combined_decision
+            assert row[9] == 0  # human_approved = 0
 
-    # Verify records updated
-    for symbol in ["HDFC", "TCS", "INFY"]:
-        row = read_watchlist_row(db_path, symbol, RUN_DATE)
-        assert row[9] == 1  # human_approved = 1
-        assert row[10] == "human_explicit"  # approval_source
+        # Now human approves all three
+        for symbol in ["HDFC", "TCS", "INFY"]:
+            record_human_approval(symbol, RUN_DATE, approved=True)
+
+        # Verify records updated
+        for symbol in ["HDFC", "TCS", "INFY"]:
+            row = read_watchlist_row(db_path, symbol, RUN_DATE)
+            assert row[9] == 1  # human_approved = 1
+            assert row[10] == "human_explicit"  # approval_source
+    finally:
+        object.__setattr__(wa_module.settings, "paper_trading", True)
 
 
 def test_02_negative_sentiment_blocks_one(seeded_db, monkeypatch):
@@ -509,101 +517,115 @@ def test_05_no_completed_research_today(seeded_db, monkeypatch):
 
 
 def test_06_check_watchlist_timeout_no_response(seeded_db, monkeypatch):
-    """Scenario 6: 2 PROCEED rows written, check_watchlist_timeout marks both timed out."""
+    """Scenario 6: 2 PROCEED rows written, check_watchlist_timeout marks both timed out (live path)."""
     db_path = seeded_db
 
-    now = datetime.datetime.now(tz=IST)
+    # Force live-trading path so rows are written with human_approved=0
+    import src.agents.watchlist_agent as wa_module
+    object.__setattr__(wa_module.settings, "paper_trading", False)
 
-    # Insert screener + research
-    for i, symbol in enumerate(["HDFC", "TCS"], start=1):
-        insert_screener_result(
-            db_path,
-            symbol,
-            rank=i,
-            momentum_score=10.0 - i,
-            regime="ABOVE_200DMA",
-            position_size_multiplier=1.0,
-        )
-        insert_research_report(
-            db_path,
-            symbol,
-            sentiment="Positive",
-            confidence=0.9,
-            source_urls=["https://example.com/1"],
-            completed_at=now,
-        )
+    try:
+        now = datetime.datetime.now(tz=IST)
 
-    # Run watchlist agent to write rows
-    with patch("src.agents.watchlist_agent.send_checkpoint") as mock_checkpoint:
-        mock_checkpoint.return_value = {"telegram": True, "gmail": True}
+        # Insert screener + research
+        for i, symbol in enumerate(["HDFC", "TCS"], start=1):
+            insert_screener_result(
+                db_path,
+                symbol,
+                rank=i,
+                momentum_score=10.0 - i,
+                regime="ABOVE_200DMA",
+                position_size_multiplier=1.0,
+            )
+            insert_research_report(
+                db_path,
+                symbol,
+                sentiment="Positive",
+                confidence=0.9,
+                source_urls=["https://example.com/1"],
+                completed_at=now,
+            )
 
-        result = run_watchlist_agent(run_date=RUN_DATE)
+        # Run watchlist agent to write rows
+        with patch("src.agents.watchlist_agent.send_checkpoint") as mock_checkpoint:
+            mock_checkpoint.return_value = {"telegram": True, "gmail": True}
 
-    assert result.proceed_count == 2
+            result = run_watchlist_agent(run_date=RUN_DATE)
 
-    # Now call check_watchlist_timeout
-    with patch("src.agents.watchlist_agent.send_alert") as mock_alert:
-        check_watchlist_timeout(RUN_DATE)
+        assert result.proceed_count == 2
 
-    # Verify both rows updated to approval_source='timeout_skip'
-    for symbol in ["HDFC", "TCS"]:
-        row = read_watchlist_row(db_path, symbol, RUN_DATE)
-        assert row[10] == "timeout_skip"  # approval_source
+        # Now call check_watchlist_timeout
+        with patch("src.agents.watchlist_agent.send_alert") as mock_alert:
+            check_watchlist_timeout(RUN_DATE)
 
-    # send_alert should have been called
-    mock_alert.assert_called_once()
+        # Verify both rows updated to approval_source='timeout_skip'
+        for symbol in ["HDFC", "TCS"]:
+            row = read_watchlist_row(db_path, symbol, RUN_DATE)
+            assert row[10] == "timeout_skip"  # approval_source
+
+        # send_alert should have been called
+        mock_alert.assert_called_once()
+    finally:
+        object.__setattr__(wa_module.settings, "paper_trading", True)
 
 
 def test_07_check_watchlist_timeout_partial_response(seeded_db, monkeypatch):
-    """Scenario 7: 2 PROCEED rows, approve first, then check_watchlist_timeout."""
+    """Scenario 7: 2 PROCEED rows, approve first, then check_watchlist_timeout (live path)."""
     db_path = seeded_db
 
-    now = datetime.datetime.now(tz=IST)
+    # Force live-trading path so rows are written with human_approved=0
+    import src.agents.watchlist_agent as wa_module
+    object.__setattr__(wa_module.settings, "paper_trading", False)
 
-    # Insert 2 screener + research
-    for i, symbol in enumerate(["HDFC", "TCS"], start=1):
-        insert_screener_result(
-            db_path,
-            symbol,
-            rank=i,
-            momentum_score=10.0 - i,
-            regime="ABOVE_200DMA",
-            position_size_multiplier=1.0,
-        )
-        insert_research_report(
-            db_path,
-            symbol,
-            sentiment="Positive",
-            confidence=0.9,
-            source_urls=["https://example.com/1"],
-            completed_at=now,
-        )
+    try:
+        now = datetime.datetime.now(tz=IST)
 
-    # Run watchlist agent
-    with patch("src.agents.watchlist_agent.send_checkpoint") as mock_checkpoint:
-        mock_checkpoint.return_value = {"telegram": True, "gmail": True}
+        # Insert 2 screener + research
+        for i, symbol in enumerate(["HDFC", "TCS"], start=1):
+            insert_screener_result(
+                db_path,
+                symbol,
+                rank=i,
+                momentum_score=10.0 - i,
+                regime="ABOVE_200DMA",
+                position_size_multiplier=1.0,
+            )
+            insert_research_report(
+                db_path,
+                symbol,
+                sentiment="Positive",
+                confidence=0.9,
+                source_urls=["https://example.com/1"],
+                completed_at=now,
+            )
 
-        run_watchlist_agent(run_date=RUN_DATE)
+        # Run watchlist agent
+        with patch("src.agents.watchlist_agent.send_checkpoint") as mock_checkpoint:
+            mock_checkpoint.return_value = {"telegram": True, "gmail": True}
 
-    # Approve first symbol
-    record_human_approval("HDFC", RUN_DATE, approved=True)
+            run_watchlist_agent(run_date=RUN_DATE)
 
-    # Verify first approved
-    row = read_watchlist_row(db_path, "HDFC", RUN_DATE)
-    assert row[10] == "human_explicit"
+        # Approve first symbol
+        record_human_approval("HDFC", RUN_DATE, approved=True)
 
-    # Call check_watchlist_timeout
-    with patch("src.agents.watchlist_agent.send_alert"), \
-         patch("src.agents.watchlist_agent.log_agent_action"):
-        check_watchlist_timeout(RUN_DATE)
+        # Verify first approved
+        row = read_watchlist_row(db_path, "HDFC", RUN_DATE)
+        assert row[10] == "human_explicit"
 
-    # Second row should be timeout_skip
-    row = read_watchlist_row(db_path, "TCS", RUN_DATE)
-    assert row[10] == "timeout_skip"
+        # Call check_watchlist_timeout
+        with patch("src.agents.watchlist_agent.send_alert"), \
+             patch("src.agents.watchlist_agent.log_agent_action"):
+            check_watchlist_timeout(RUN_DATE)
 
-    # First should remain human_explicit
-    row = read_watchlist_row(db_path, "HDFC", RUN_DATE)
-    assert row[10] == "human_explicit"
+        # Second row should be timeout_skip
+        row = read_watchlist_row(db_path, "TCS", RUN_DATE)
+        assert row[10] == "timeout_skip"
+
+        # First should remain human_explicit
+        row = read_watchlist_row(db_path, "HDFC", RUN_DATE)
+        assert row[10] == "human_explicit"
+    finally:
+        object.__setattr__(wa_module.settings, "paper_trading", True)
 
 
 def test_08_record_human_approval_single_symbol(seeded_db, monkeypatch):

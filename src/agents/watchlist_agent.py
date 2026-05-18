@@ -755,6 +755,31 @@ def run_watchlist_agent(
         result="ok",
     )
 
+    # Paper trading: auto-approve all PROCEED candidates without waiting for human reply.
+    # Notification is still sent above so the human can see what's going in.
+    if settings.paper_trading:
+        for cand in proceed_candidates:
+            record_human_approval(
+                symbol=cand.symbol,
+                run_date=run_date,
+                approved=True,
+            )
+        log_agent_action(
+            agent_name=AGENT_NAME,
+            action=f"auto_approved: paper_trading_mode — {len(proceed_candidates)} symbols",
+            level="INFO",
+            result="ok",
+        )
+        return WatchlistAgentResult(
+            run_date=run_date,
+            candidates_evaluated=len(candidates),
+            proceed_count=len(proceed_candidates),
+            skipped_count=len(skip_candidates),
+            approved_symbols=[c.symbol for c in proceed_candidates],
+            human_responded=True,
+            completed_at=_ist_now(),
+        )
+
     return WatchlistAgentResult(
         run_date=run_date,
         candidates_evaluated=len(candidates),
