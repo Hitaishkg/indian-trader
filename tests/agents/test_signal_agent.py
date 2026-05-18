@@ -861,6 +861,7 @@ def test_ohlcv_lookback_window(
         symbols=["TCS"],
         start_date=expected_start,
         end_date=RUN_DATE,
+        cache_expiry_hours=0,
     )
 
 

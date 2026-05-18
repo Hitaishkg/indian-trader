@@ -787,12 +787,12 @@ def test_12_position_exceeds_40pct_cap(temp_db):
     assert approval.entry_price_approx * approval.quantity <= 4000.0
 
 
-def test_13_max_2_open_positions(temp_db):
-    """Third symbol rejected with reason 'max_positions_reached'."""
+def test_13_max_3_open_positions(temp_db):
+    """Fourth symbol rejected with reason 'max_positions_reached'."""
     db_path = temp_db
 
-    # Insert 3 approved watchlist rows
-    for i, symbol in enumerate(["HDFC", "TCS", "INFY"], start=1):
+    # Insert 4 approved watchlist rows
+    for i, symbol in enumerate(["HDFC", "TCS", "INFY", "WIPRO"], start=1):
         insert_watchlist_row(db_path, symbol, rank=i)
         insert_signal_row(db_path, symbol)
 
@@ -811,11 +811,11 @@ def test_13_max_2_open_positions(temp_db):
 
         result = run_risk_agent(run_date=RUN_DATE, db_path_override=db_path)
 
-    # Only 2 should be approved
-    assert len(result.approved) == 2
-    # INFY (3rd) should be rejected
+    # Only 3 should be approved
+    assert len(result.approved) == 3
+    # WIPRO (4th) should be rejected
     assert len(result.rejected) == 1
-    assert result.rejected[0].symbol == "INFY"
+    assert result.rejected[0].symbol == "WIPRO"
     assert result.rejected[0].rejection_reason == "max_positions_reached"
 
 
